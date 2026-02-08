@@ -5,11 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"lifesupport/backend/pkg/api"
 	"time"
 
 	_ "github.com/lib/pq"
-
-	"lifesupport/backend/pkg/device"
 )
 
 // Storer provides database operations for device data
@@ -124,7 +123,7 @@ func (s *Storer) InitSchema(ctx context.Context) error {
 // System operations
 
 // CreateSystem creates a new system in the database
-func (s *Storer) CreateSystem(ctx context.Context, sys *device.System) error {
+func (s *Storer) CreateSystem(ctx context.Context, sys *api.System) error {
 	query := `
 		INSERT INTO systems (id, name, description, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)
@@ -145,10 +144,10 @@ func (s *Storer) CreateSystem(ctx context.Context, sys *device.System) error {
 }
 
 // GetSystem retrieves a system by ID with all its subsystems and devices
-func (s *Storer) GetSystem(ctx context.Context, id string) (*device.System, error) {
+func (s *Storer) GetSystem(ctx context.Context, id string) (*api.System, error) {
 	query := `SELECT id, name, description, created_at, updated_at FROM systems WHERE id = $1`
 
-	var sys device.System
+	var sys api.System
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&sys.ID, &sys.Name, &sys.Description, &sys.CreatedAt, &sys.UpdatedAt,
 	)
@@ -170,7 +169,7 @@ func (s *Storer) GetSystem(ctx context.Context, id string) (*device.System, erro
 }
 
 // UpdateSystem updates an existing system
-func (s *Storer) UpdateSystem(ctx context.Context, sys *device.System) error {
+func (s *Storer) UpdateSystem(ctx context.Context, sys *api.System) error {
 	query := `
 		UPDATE systems 
 		SET name = $2, description = $3, updated_at = $4
@@ -212,9 +211,42 @@ func (s *Storer) DeleteSystem(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListSystems retrieves all systems with their subsystems and devices
+func (s *Storer) ListSystems(ctx context.Context) ([]*api.System, error) {
+	query := `SELECT id, name, description, created_at, updated_at FROM systems ORDER BY name`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query systems: %w", err)
+	}
+	defer rows.Close()
+
+	var systems []*api.System
+	for rows.Next() {
+		var sys api.System
+		err := rows.Scan(
+			&sys.ID, &sys.Name, &sys.Description, &sys.CreatedAt, &sys.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan system: %w", err)
+		}
+
+		// Load subsystems
+		subsystems, err := s.getSubsystemsBySystemID(ctx, sys.ID)
+		if err != nil {
+			return nil, err
+		}
+		sys.Subsystems = subsystems
+
+		systems = append(systems, &sys)
+	}
+
+	return systems, rows.Err()
+}
+
 // Subsystem operations
 
-func (s *Storer) createSubsystem(ctx context.Context, sub *device.Subsystem, systemID string, parentID *string) error {
+func (s *Storer) createSubsystem(ctx context.Context, sub *api.Subsystem, systemID string, parentID *string) error {
 	metadata, err := json.Marshal(sub.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -248,19 +280,19 @@ func (s *Storer) createSubsystem(ctx context.Context, sub *device.Subsystem, sys
 }
 
 // CreateSubsystem creates a new subsystem
-func (s *Storer) CreateSubsystem(ctx context.Context, sub *device.Subsystem, systemID string) error {
+func (s *Storer) CreateSubsystem(ctx context.Context, sub *api.Subsystem, systemID string) error {
 	return s.createSubsystem(ctx, sub, systemID, nil)
 }
 
 // GetSubsystem retrieves a subsystem by ID with all its devices and children
-func (s *Storer) GetSubsystem(ctx context.Context, id string) (*device.Subsystem, error) {
+func (s *Storer) GetSubsystem(ctx context.Context, id string) (*api.Subsystem, error) {
 	query := `
 		SELECT id, name, description, type, parent_id, metadata
 		FROM subsystems 
 		WHERE id = $1
 	`
 
-	var sub device.Subsystem
+	var sub api.Subsystem
 	var parentID sql.NullString
 	var metadataJSON []byte
 
@@ -297,7 +329,7 @@ func (s *Storer) GetSubsystem(ctx context.Context, id string) (*device.Subsystem
 	return &sub, nil
 }
 
-func (s *Storer) getSubsystemsBySystemID(ctx context.Context, systemID string) ([]*device.Subsystem, error) {
+func (s *Storer) getSubsystemsBySystemID(ctx context.Context, systemID string) ([]*api.Subsystem, error) {
 	query := `
 		SELECT id, name, description, type, parent_id, metadata
 		FROM subsystems 
@@ -310,9 +342,9 @@ func (s *Storer) getSubsystemsBySystemID(ctx context.Context, systemID string) (
 	}
 	defer rows.Close()
 
-	var subsystems []*device.Subsystem
+	var subsystems []*api.Subsystem
 	for rows.Next() {
-		var sub device.Subsystem
+		var sub api.Subsystem
 		var parentID sql.NullString
 		var metadataJSON []byte
 
@@ -347,7 +379,7 @@ func (s *Storer) getSubsystemsBySystemID(ctx context.Context, systemID string) (
 	return subsystems, rows.Err()
 }
 
-func (s *Storer) getChildSubsystems(ctx context.Context, parentID string) ([]*device.Subsystem, error) {
+func (s *Storer) getChildSubsystems(ctx context.Context, parentID string) ([]*api.Subsystem, error) {
 	query := `
 		SELECT id, name, description, type, metadata
 		FROM subsystems 
@@ -360,9 +392,9 @@ func (s *Storer) getChildSubsystems(ctx context.Context, parentID string) ([]*de
 	}
 	defer rows.Close()
 
-	var subsystems []*device.Subsystem
+	var subsystems []*api.Subsystem
 	for rows.Next() {
-		var sub device.Subsystem
+		var sub api.Subsystem
 		var metadataJSON []byte
 
 		err := rows.Scan(&sub.ID, &sub.Name, &sub.Description, &sub.Type, &metadataJSON)
@@ -397,7 +429,7 @@ func (s *Storer) getChildSubsystems(ctx context.Context, parentID string) ([]*de
 }
 
 // UpdateSubsystem updates an existing subsystem
-func (s *Storer) UpdateSubsystem(ctx context.Context, sub *device.Subsystem) error {
+func (s *Storer) UpdateSubsystem(ctx context.Context, sub *api.Subsystem) error {
 	metadata, err := json.Marshal(sub.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -443,9 +475,60 @@ func (s *Storer) DeleteSubsystem(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListSubsystems retrieves all subsystems across all systems with their devices and children
+func (s *Storer) ListSubsystems(ctx context.Context) ([]*api.Subsystem, error) {
+	query := `
+		SELECT id, name, description, type, parent_id, metadata
+		FROM subsystems 
+		ORDER BY name
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query subsystems: %w", err)
+	}
+	defer rows.Close()
+
+	var subsystems []*api.Subsystem
+	for rows.Next() {
+		var sub api.Subsystem
+		var parentID sql.NullString
+		var metadataJSON []byte
+
+		err := rows.Scan(&sub.ID, &sub.Name, &sub.Description, &sub.Type, &parentID, &metadataJSON)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan subsystem: %w", err)
+		}
+
+		if len(metadataJSON) > 0 {
+			if err := json.Unmarshal(metadataJSON, &sub.Metadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+			}
+		}
+
+		// Load devices
+		devices, err := s.getDevicesBySubsystemID(ctx, sub.ID)
+		if err != nil {
+			return nil, err
+		}
+		sub.Devices = devices
+
+		// Load child subsystems
+		children, err := s.getChildSubsystems(ctx, sub.ID)
+		if err != nil {
+			return nil, err
+		}
+		sub.Subsystems = children
+
+		subsystems = append(subsystems, &sub)
+	}
+
+	return subsystems, rows.Err()
+}
+
 // Device operations
 
-func (s *Storer) createDevice(ctx context.Context, dev *device.Device, subsystemID string) error {
+func (s *Storer) createDevice(ctx context.Context, dev *api.Device, subsystemID string) error {
 	metadata, err := json.Marshal(dev.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -464,19 +547,19 @@ func (s *Storer) createDevice(ctx context.Context, dev *device.Device, subsystem
 }
 
 // CreateDevice creates a new device
-func (s *Storer) CreateDevice(ctx context.Context, dev *device.Device, subsystemID string) error {
+func (s *Storer) CreateDevice(ctx context.Context, dev *api.Device, subsystemID string) error {
 	return s.createDevice(ctx, dev, subsystemID)
 }
 
 // GetDevice retrieves a device by ID
-func (s *Storer) GetDevice(ctx context.Context, id string) (*device.Device, error) {
+func (s *Storer) GetDevice(ctx context.Context, id string) (*api.Device, error) {
 	query := `
 		SELECT id, driver, name, description, metadata
 		FROM devices 
 		WHERE id = $1
 	`
 
-	var dev device.Device
+	var dev api.Device
 	var metadataJSON []byte
 
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
@@ -501,7 +584,7 @@ func (s *Storer) GetDevice(ctx context.Context, id string) (*device.Device, erro
 	return &dev, nil
 }
 
-func (s *Storer) getDevicesBySubsystemID(ctx context.Context, subsystemID string) ([]*device.Device, error) {
+func (s *Storer) getDevicesBySubsystemID(ctx context.Context, subsystemID string) ([]*api.Device, error) {
 	query := `
 		SELECT id, driver, name, description, metadata
 		FROM devices 
@@ -514,9 +597,9 @@ func (s *Storer) getDevicesBySubsystemID(ctx context.Context, subsystemID string
 	}
 	defer rows.Close()
 
-	var devices []*device.Device
+	var devices []*api.Device
 	for rows.Next() {
-		var dev device.Device
+		var dev api.Device
 		var metadataJSON []byte
 
 		err := rows.Scan(&dev.ID, &dev.Driver, &dev.Name, &dev.Description, &metadataJSON)
@@ -537,7 +620,7 @@ func (s *Storer) getDevicesBySubsystemID(ctx context.Context, subsystemID string
 }
 
 // UpdateDevice updates an existing device
-func (s *Storer) UpdateDevice(ctx context.Context, dev *device.Device) error {
+func (s *Storer) UpdateDevice(ctx context.Context, dev *api.Device) error {
 	metadata, err := json.Marshal(dev.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -583,10 +666,46 @@ func (s *Storer) DeleteDevice(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListDevices retrieves all devices across all subsystems
+func (s *Storer) ListDevices(ctx context.Context) ([]*api.Device, error) {
+	query := `
+		SELECT id, driver, name, description, metadata
+		FROM devices 
+		ORDER BY name
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query devices: %w", err)
+	}
+	defer rows.Close()
+
+	var devices []*api.Device
+	for rows.Next() {
+		var dev api.Device
+		var metadataJSON []byte
+
+		err := rows.Scan(&dev.ID, &dev.Driver, &dev.Name, &dev.Description, &metadataJSON)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan device: %w", err)
+		}
+
+		if len(metadataJSON) > 0 {
+			if err := json.Unmarshal(metadataJSON, &dev.Metadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+			}
+		}
+
+		devices = append(devices, &dev)
+	}
+
+	return devices, rows.Err()
+}
+
 // Sensor Reading operations
 
 // StoreSensorReading stores a sensor reading in the database
-func (s *Storer) StoreSensorReading(ctx context.Context, deviceID, sensorID, sensorName string, sensorType device.SensorType, reading *device.SensorReading) error {
+func (s *Storer) StoreSensorReading(ctx context.Context, deviceID, sensorID, sensorName string, sensorType api.SensorType, reading *api.SensorReading) error {
 	query := `
 		INSERT INTO sensor_readings (device_id, sensor_id, sensor_name, sensor_type, value, unit, valid, error, timestamp)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -603,7 +722,7 @@ func (s *Storer) StoreSensorReading(ctx context.Context, deviceID, sensorID, sen
 }
 
 // GetSensorReadings retrieves sensor readings with optional filters
-func (s *Storer) GetSensorReadings(ctx context.Context, filters SensorReadingFilters) ([]*device.SensorReading, error) {
+func (s *Storer) GetSensorReadings(ctx context.Context, filters SensorReadingFilters) ([]*api.SensorReading, error) {
 	query := `
 		SELECT value, unit, valid, error, timestamp
 		FROM sensor_readings
@@ -655,9 +774,9 @@ func (s *Storer) GetSensorReadings(ctx context.Context, filters SensorReadingFil
 	}
 	defer rows.Close()
 
-	var readings []*device.SensorReading
+	var readings []*api.SensorReading
 	for rows.Next() {
-		var reading device.SensorReading
+		var reading api.SensorReading
 		var errorMsg sql.NullString
 
 		err := rows.Scan(&reading.Value, &reading.Unit, &reading.Valid, &errorMsg, &reading.Timestamp)
@@ -676,7 +795,7 @@ func (s *Storer) GetSensorReadings(ctx context.Context, filters SensorReadingFil
 }
 
 // GetLatestSensorReading retrieves the most recent sensor reading for a sensor
-func (s *Storer) GetLatestSensorReading(ctx context.Context, sensorID string) (*device.SensorReading, error) {
+func (s *Storer) GetLatestSensorReading(ctx context.Context, sensorID string) (*api.SensorReading, error) {
 	query := `
 		SELECT value, unit, valid, error, timestamp
 		FROM sensor_readings
@@ -685,7 +804,7 @@ func (s *Storer) GetLatestSensorReading(ctx context.Context, sensorID string) (*
 		LIMIT 1
 	`
 
-	var reading device.SensorReading
+	var reading api.SensorReading
 	var errorMsg sql.NullString
 
 	err := s.db.QueryRowContext(ctx, query, sensorID).Scan(
@@ -724,7 +843,7 @@ func (s *Storer) DeleteOldSensorReadings(ctx context.Context, before time.Time) 
 // Actuator State operations
 
 // StoreActuatorState stores an actuator state in the database
-func (s *Storer) StoreActuatorState(ctx context.Context, deviceID, actuatorID, actuatorName string, actuatorType device.ActuatorType, state *device.ActuatorState) error {
+func (s *Storer) StoreActuatorState(ctx context.Context, deviceID, actuatorID, actuatorName string, actuatorType api.ActuatorType, state *api.ActuatorState) error {
 	parameters, err := json.Marshal(state.Parameters)
 	if err != nil {
 		return fmt.Errorf("failed to marshal parameters: %w", err)
@@ -746,7 +865,7 @@ func (s *Storer) StoreActuatorState(ctx context.Context, deviceID, actuatorID, a
 }
 
 // GetActuatorStates retrieves actuator states with optional filters
-func (s *Storer) GetActuatorStates(ctx context.Context, filters ActuatorStateFilters) ([]*device.ActuatorState, error) {
+func (s *Storer) GetActuatorStates(ctx context.Context, filters ActuatorStateFilters) ([]*api.ActuatorState, error) {
 	query := `
 		SELECT active, parameters, error, timestamp
 		FROM actuator_states
@@ -798,9 +917,9 @@ func (s *Storer) GetActuatorStates(ctx context.Context, filters ActuatorStateFil
 	}
 	defer rows.Close()
 
-	var states []*device.ActuatorState
+	var states []*api.ActuatorState
 	for rows.Next() {
-		var state device.ActuatorState
+		var state api.ActuatorState
 		var parametersJSON []byte
 		var errorMsg sql.NullString
 
@@ -826,7 +945,7 @@ func (s *Storer) GetActuatorStates(ctx context.Context, filters ActuatorStateFil
 }
 
 // GetLatestActuatorState retrieves the most recent state for an actuator
-func (s *Storer) GetLatestActuatorState(ctx context.Context, actuatorID string) (*device.ActuatorState, error) {
+func (s *Storer) GetLatestActuatorState(ctx context.Context, actuatorID string) (*api.ActuatorState, error) {
 	query := `
 		SELECT active, parameters, error, timestamp
 		FROM actuator_states
@@ -835,7 +954,7 @@ func (s *Storer) GetLatestActuatorState(ctx context.Context, actuatorID string) 
 		LIMIT 1
 	`
 
-	var state device.ActuatorState
+	var state api.ActuatorState
 	var parametersJSON []byte
 	var errorMsg sql.NullString
 
@@ -884,7 +1003,7 @@ func (s *Storer) DeleteOldActuatorStates(ctx context.Context, before time.Time) 
 type SensorReadingFilters struct {
 	DeviceID   *string
 	SensorID   *string
-	SensorType *device.SensorType
+	SensorType *api.SensorType
 	StartTime  *time.Time
 	EndTime    *time.Time
 	Limit      int
@@ -894,7 +1013,7 @@ type SensorReadingFilters struct {
 type ActuatorStateFilters struct {
 	DeviceID     *string
 	ActuatorID   *string
-	ActuatorType *device.ActuatorType
+	ActuatorType *api.ActuatorType
 	StartTime    *time.Time
 	EndTime      *time.Time
 	Limit        int

@@ -1,12 +1,19 @@
-.PHONY: build test test-verbose test-cover clean run setup-test-db help
+.PHONY: build test test-verbose test-cover clean run run-http run-worker setup-test-db help
 
 # Build the application
 build:
-	go build -o lifesupport-api
+	go build -o lifesupport-backend
 
-# Run the application
-run: build
-	./lifesupport-api
+# Run the HTTP API server (legacy run command)
+run: build run-http
+
+# Run the HTTP API server
+run-http: build
+	./lifesupport-backend http
+
+# Run the Temporal worker
+run-worker: build
+	./lifesupport-backend worker
 
 # Run all tests
 test:
@@ -40,7 +47,7 @@ setup-test-db:
 
 # Clean build artifacts
 clean:
-	rm -f lifesupport-api
+	rm -f lifesupport-backend lifesupport-api
 	rm -f coverage.out coverage.html
 
 # Install dependencies
@@ -63,7 +70,9 @@ check: fmt lint test
 help:
 	@echo "Available targets:"
 	@echo "  build          - Build the application"
-	@echo "  run            - Build and run the application"
+	@echo "  run            - Build and run the HTTP API server"
+	@echo "  run-http       - Build and run the HTTP API server"
+	@echo "  run-worker     - Build and run the Temporal worker"
 	@echo "  test           - Run all tests"
 	@echo "  test-verbose   - Run tests with verbose output"
 	@echo "  test-api       - Run API package tests only"

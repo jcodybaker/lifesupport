@@ -44,16 +44,40 @@ Or use your own PostgreSQL instance and update the connection string in `backend
 
 ### 2. Start the Backend
 
+The backend now uses Cobra CLI and supports two modes:
+
+**HTTP API Server:**
 ```bash
 cd backend
 
 # Using Make (recommended)
 make build
-make run
+make run-http
 
-# Or directly with Go
-go run main.go
+# Or directly
+./lifesupport-backend http
+
+# With custom port
+./lifesupport-backend http --port 3000
 ```
+
+**Temporal Worker:**
+```bash
+cd backend
+
+# Using Make
+make run-worker
+
+# Or directly
+./lifesupport-backend worker
+
+# With custom options
+./lifesupport-backend worker \
+  --temporal-host localhost:7233 \
+  --task-queue lifesupport-tasks
+```
+
+For more details on the Temporal worker, see [backend/TEMPORAL.md](backend/TEMPORAL.md).
 
 The API will be available at `http://localhost:8080`
 
