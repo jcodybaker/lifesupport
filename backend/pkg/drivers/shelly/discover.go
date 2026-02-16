@@ -61,15 +61,21 @@ func (d *Driver) DiscoverDevices(ctx context.Context, opt drivers.DiscoveryOptio
 			go func(deviceInfo *shelly.ShellyGetDeviceInfoResponse) {
 				defer wg.Done()
 				defer func() { <-workerLimiter }()
-				// dev, err := d.shellyQueryFullDevice(ctx, deviceInfo)
-				var shellyConfig shelly.ShellyGetConfigResponse
-				if err := d.roundTrip(ctx, deviceInfo.ID, "Shelly.GetConfig", nil, &shellyConfig, time.Second*5); err != nil {
+				ll := ll.With().Str("device_id", deviceInfo.ID).Logger()
+				ll.Debug().Msg("Processing discovered device")
+				shellyConfig := &shelly.ShellyGetConfigResponse{}
+				if err := d.roundTrip(ctx, deviceInfo.ID, "Shelly.GetConfig", nil, shellyConfig, time.Second*5); err != nil {
 					ll.Err(err).
 						Str("device_id", deviceInfo.ID).
 						Msg("querying shelly for full device config")
 					return
 				}
-				dev := d.deviceInfoToDevice(deviceInfo, &shellyConfig)
+				ll.Debug().
+					Int("switch_count", len(shellyConfig.Switches)).
+					Int("input_count", len(shellyConfig.Inputs)).
+					Msg("Successfully retrieved device config, converting to internal model and storing")
+
+				dev := d.deviceInfoToDevice(deviceInfo, shellyConfig)
 				if err := s.CreateDevice(ctx, dev); err != nil {
 					if errors.Is(err, storer.ErrAlreadyExists) {
 						ll.Debug().
@@ -129,17 +135,21 @@ func (d *Driver) deviceInfoToDevice(info *shelly.ShellyGetDeviceInfoResponse, co
 		Description: fmt.Sprintf("Shelly %s %s", info.App, info.MAC),
 	}
 	for _, s := range config.Switches {
+		name := ""
+		if s.Name != nil {
+			name = *s.Name
+		} else {
+			name = fmt.Sprintf("%s Switch %d", dev.Name, s.ID)
+		}
 		r := &api.Relay{
 			BaseActuator: api.BaseActuator{
 				ID:           fmt.Sprintf("switch:%d", s.ID),
 				ActuatorType: api.ActuatorTypeRelay,
 				DeviceID:     dev.ID,
-				Name:         *s.Name,
+				Name:         name,
 			},
 		}
-		if r.Name == "" {
-			r.Name = fmt.Sprintf("%s Switch %d", dev.Name, s.ID)
-		}
+
 		r.Tags = []string{r.DefaultTag(dev.ID)}
 		dev.Actuators = append(dev.Actuators, r)
 	}

@@ -3,6 +3,7 @@ package shelly
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -56,7 +57,8 @@ func (r *Driver) handleMessage(_ mqtt.Client, m mqtt.Message) {
 
 func (r *Driver) roundTrip(ctx context.Context, dst string, method string, params any, reply any, timeout time.Duration) error {
 	id := atomic.AddUint64(&r.nextID, 1)
-
+	ll := r.logCtx(ctx, "mqtt").With().Uint64("request_id", id).Str("method", method).Str("dst", dst).Logger()
+	ll.Debug().Msg("Initiating round trip to device")
 	if params == nil {
 		params = json.RawMessage("{}")
 	}
@@ -105,7 +107,21 @@ func (r *Driver) roundTrip(ctx context.Context, dst string, method string, param
 
 	select {
 	case resp := <-respCh:
-		return json.Unmarshal(resp, reply)
+		ll.Debug().RawJSON("resp", resp).Msg("Received response")
+		var respFrame ResponseFrame
+		if err := json.Unmarshal(resp, &respFrame); err != nil {
+			ll.Err(err).Msg("Failed to unmarshal response frame")
+			return err
+		}
+		if respFrame.Error != nil {
+			ll.Error().Int("code", respFrame.Error.Code).Str("message", respFrame.Error.Message).Msg("Received error response from device")
+			return errors.New(respFrame.Error.Message)
+		}
+		if respFrame.Result == nil {
+			ll.Error().Msg("Received response with no result")
+			return nil
+		}
+		return json.Unmarshal(*respFrame.Result, reply)
 	case <-ctx.Done():
 		return ctx.Err()
 	}

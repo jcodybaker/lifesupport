@@ -10,6 +10,8 @@ import (
 
 	"github.com/lib/pq"
 	_ "github.com/lib/pq"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // Exported errors
@@ -20,30 +22,53 @@ var (
 
 // Storer provides database operations for device data
 type Storer struct {
-	db *sql.DB
+	db  *sql.DB
+	log zerolog.Logger
 }
 
 // New creates a new Storer instance with a PostgreSQL connection
-func New(connString string) (*Storer, error) {
+func New(connString string, opts ...Option) (*Storer, error) {
+	s := &Storer{}
+	for _, opt := range opts {
+		opt(s)
+	}
 	db, err := sql.Open("postgres", connString)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+	s.db = db
 
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	return &Storer{db: db}, nil
+	return s, nil
+}
+
+func (s *Storer) logCtx(ctx context.Context, sub string) zerolog.Logger {
+	var ll zerolog.Context
+	if ctxLog := log.Ctx(ctx); ctxLog.GetLevel() != zerolog.Disabled {
+		ll = ctxLog.With()
+	} else {
+		ll = s.log.With()
+	}
+	ll = ll.Str("component", "storer")
+	if sub != "" {
+		ll = ll.Str("subcomponent", sub)
+	}
+	return ll.Logger()
 }
 
 // Close closes the database connection
 func (s *Storer) Close() error {
+	log.Debug().Msg("closing database connection")
 	return s.db.Close()
 }
 
 // InitSchema creates the necessary database tables
 func (s *Storer) InitSchema(ctx context.Context) error {
+	ll := s.logCtx(ctx, "schema")
+	ll.Debug().Msg("initializing database schema")
 	schema := `
 	CREATE TABLE IF NOT EXISTS devices (
 		id VARCHAR(255) PRIMARY KEY,
@@ -197,6 +222,8 @@ func (s *Storer) createDevice(ctx context.Context, dev *api.Device) error {
 
 // CreateDevice creates a new device with its nested sensors and actuators in a transaction
 func (s *Storer) CreateDevice(ctx context.Context, dev *api.Device) error {
+	ll := s.logCtx(ctx, "device")
+	ll.Debug().Str("device_id", dev.ID).Str("driver", string(dev.Driver)).Msg("creating device")
 	// Start a transaction
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -301,6 +328,8 @@ func (s *Storer) CreateDevice(ctx context.Context, dev *api.Device) error {
 
 // GetDevice retrieves a device by ID
 func (s *Storer) GetDevice(ctx context.Context, id string) (*api.Device, error) {
+	ll := s.logCtx(ctx, "device")
+	ll.Debug().Str("device_id", id).Msg("getting device")
 	query := `
 		SELECT id, driver, name, description, metadata, tags
 		FROM devices 
@@ -337,6 +366,8 @@ func (s *Storer) GetDevice(ctx context.Context, id string) (*api.Device, error) 
 
 // UpdateDevice updates an existing device
 func (s *Storer) UpdateDevice(ctx context.Context, dev *api.Device) error {
+	ll := s.logCtx(ctx, "device")
+	ll.Debug().Str("device_id", dev.ID).Msg("updating device")
 	metadata, err := json.Marshal(dev.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -373,6 +404,8 @@ func (s *Storer) UpdateDevice(ctx context.Context, dev *api.Device) error {
 
 // DeleteDevice deletes a device and all its sensor readings and actuator states (cascading)
 func (s *Storer) DeleteDevice(ctx context.Context, id string) error {
+	ll := s.logCtx(ctx, "device")
+	ll.Debug().Str("device_id", id).Msg("deleting device")
 	query := `DELETE FROM devices WHERE id = $1`
 	result, err := s.db.ExecContext(ctx, query, id)
 	if err != nil {
@@ -392,6 +425,8 @@ func (s *Storer) DeleteDevice(ctx context.Context, id string) error {
 
 // ListDevices retrieves all devices.
 func (s *Storer) ListDevices(ctx context.Context) ([]*api.Device, error) {
+	ll := s.logCtx(ctx, "device")
+	ll.Debug().Msg("listing all devices")
 	query := `
 		SELECT id, driver, name, description, metadata, tags
 		FROM devices 
@@ -431,6 +466,8 @@ func (s *Storer) ListDevices(ctx context.Context) ([]*api.Device, error) {
 
 // GetDeviceByTag retrieves a device with a specific tag
 func (s *Storer) GetDeviceByTag(ctx context.Context, tag string) (*api.Device, error) {
+	ll := s.logCtx(ctx, "device")
+	ll.Debug().Str("tag", tag).Msg("getting device by tag")
 	query := `
 		SELECT id, driver, name, description, metadata, tags
 		FROM devices 
@@ -464,6 +501,8 @@ func (s *Storer) GetDeviceByTag(ctx context.Context, tag string) (*api.Device, e
 
 // ListDevicesByTagPrefix retrieves devices with tags matching a prefix
 func (s *Storer) ListDevicesByTagPrefix(ctx context.Context, prefix string) ([]*api.Device, error) {
+	ll := s.logCtx(ctx, "device")
+	ll.Debug().Str("prefix", prefix).Msg("listing devices by tag prefix")
 	query := `
 		SELECT DISTINCT id, driver, name, description, metadata, tags
 		FROM devices, unnest(tags) AS tag
@@ -510,6 +549,8 @@ func (s *Storer) scanDevices(rows *sql.Rows) ([]*api.Device, error) {
 
 // CreateSensor creates a new sensor
 func (s *Storer) CreateSensor(ctx context.Context, sensor *api.BaseSensor) error {
+	ll := s.logCtx(ctx, "sensor")
+	ll.Debug().Str("device_id", sensor.DeviceID).Str("sensor_id", sensor.ID).Str("sensor_type", string(sensor.SensorType)).Msg("creating sensor")
 	metadata, err := json.Marshal(sensor.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -539,6 +580,8 @@ func (s *Storer) CreateSensor(ctx context.Context, sensor *api.BaseSensor) error
 
 // GetSensor retrieves a sensor by device ID and sensor ID
 func (s *Storer) GetSensor(ctx context.Context, deviceID, sensorID string) (*api.BaseSensor, error) {
+	ll := s.logCtx(ctx, "sensor")
+	ll.Debug().Str("device_id", deviceID).Str("sensor_id", sensorID).Msg("getting sensor")
 	query := `
 		SELECT id, device_id, name, sensor_type, metadata, tags
 		FROM sensors 
@@ -571,6 +614,8 @@ func (s *Storer) GetSensor(ctx context.Context, deviceID, sensorID string) (*api
 
 // UpdateSensor updates an existing sensor
 func (s *Storer) UpdateSensor(ctx context.Context, sensor *api.BaseSensor) error {
+	ll := s.logCtx(ctx, "sensor")
+	ll.Debug().Str("device_id", sensor.DeviceID).Str("sensor_id", sensor.ID).Msg("updating sensor")
 	metadata, err := json.Marshal(sensor.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -604,6 +649,8 @@ func (s *Storer) UpdateSensor(ctx context.Context, sensor *api.BaseSensor) error
 
 // DeleteSensor deletes a sensor by device ID and sensor ID
 func (s *Storer) DeleteSensor(ctx context.Context, deviceID, sensorID string) error {
+	ll := s.logCtx(ctx, "sensor")
+	ll.Debug().Str("device_id", deviceID).Str("sensor_id", sensorID).Msg("deleting sensor")
 	query := `DELETE FROM sensors WHERE device_id = $1 AND id = $2`
 	result, err := s.db.ExecContext(ctx, query, deviceID, sensorID)
 	if err != nil {
@@ -623,6 +670,8 @@ func (s *Storer) DeleteSensor(ctx context.Context, deviceID, sensorID string) er
 
 // ListSensors retrieves all sensors
 func (s *Storer) ListSensors(ctx context.Context) ([]*api.BaseSensor, error) {
+	ll := s.logCtx(ctx, "sensor")
+	ll.Debug().Msg("listing all sensors")
 	query := `
 		SELECT id, device_id, name, sensor_type, metadata, tags
 		FROM sensors 
@@ -640,6 +689,8 @@ func (s *Storer) ListSensors(ctx context.Context) ([]*api.BaseSensor, error) {
 
 // ListSensorsByDeviceID retrieves all sensors for a device
 func (s *Storer) ListSensorsByDeviceID(ctx context.Context, deviceID string) ([]*api.BaseSensor, error) {
+	ll := s.logCtx(ctx, "sensor")
+	ll.Debug().Str("device_id", deviceID).Msg("listing sensors by device")
 	query := `
 		SELECT id, device_id, name, sensor_type, metadata, tags
 		FROM sensors 
@@ -658,6 +709,8 @@ func (s *Storer) ListSensorsByDeviceID(ctx context.Context, deviceID string) ([]
 
 // GetSensorByTag retrieves a sensor with a specific tag
 func (s *Storer) GetSensorByTag(ctx context.Context, tag string) (*api.BaseSensor, error) {
+	ll := s.logCtx(ctx, "sensor")
+	ll.Debug().Str("tag", tag).Msg("getting sensor by tag")
 	query := `
 		SELECT id, device_id, name, sensor_type, metadata, tags
 		FROM sensors 
@@ -691,6 +744,8 @@ func (s *Storer) GetSensorByTag(ctx context.Context, tag string) (*api.BaseSenso
 
 // ListSensorsByTagPrefix retrieves sensors with tags matching a prefix
 func (s *Storer) ListSensorsByTagPrefix(ctx context.Context, prefix string) ([]*api.BaseSensor, error) {
+	ll := s.logCtx(ctx, "sensor")
+	ll.Debug().Str("prefix", prefix).Msg("listing sensors by tag prefix")
 	query := `
 		SELECT DISTINCT id, device_id, name, sensor_type, metadata, tags
 		FROM sensors, unnest(tags) AS tag
@@ -737,6 +792,8 @@ func (s *Storer) scanSensors(rows *sql.Rows) ([]*api.BaseSensor, error) {
 
 // CreateActuator creates a new actuator
 func (s *Storer) CreateActuator(ctx context.Context, actuator *api.BaseActuator) error {
+	ll := s.logCtx(ctx, "actuator")
+	ll.Debug().Str("device_id", actuator.DeviceID).Str("actuator_id", actuator.ID).Str("actuator_type", string(actuator.ActuatorType)).Msg("creating actuator")
 	metadata, err := json.Marshal(actuator.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -766,6 +823,8 @@ func (s *Storer) CreateActuator(ctx context.Context, actuator *api.BaseActuator)
 
 // GetActuator retrieves an actuator by device ID and actuator ID
 func (s *Storer) GetActuator(ctx context.Context, deviceID, actuatorID string) (*api.BaseActuator, error) {
+	ll := s.logCtx(ctx, "actuator")
+	ll.Debug().Str("device_id", deviceID).Str("actuator_id", actuatorID).Msg("getting actuator")
 	query := `
 		SELECT id, device_id, name, actuator_type, metadata, tags
 		FROM actuators 
@@ -798,6 +857,8 @@ func (s *Storer) GetActuator(ctx context.Context, deviceID, actuatorID string) (
 
 // UpdateActuator updates an existing actuator
 func (s *Storer) UpdateActuator(ctx context.Context, actuator *api.BaseActuator) error {
+	ll := s.logCtx(ctx, "actuator")
+	ll.Debug().Str("device_id", actuator.DeviceID).Str("actuator_id", actuator.ID).Msg("updating actuator")
 	metadata, err := json.Marshal(actuator.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -831,6 +892,8 @@ func (s *Storer) UpdateActuator(ctx context.Context, actuator *api.BaseActuator)
 
 // DeleteActuator deletes an actuator by device ID and actuator ID
 func (s *Storer) DeleteActuator(ctx context.Context, deviceID, actuatorID string) error {
+	ll := s.logCtx(ctx, "actuator")
+	ll.Debug().Str("device_id", deviceID).Str("actuator_id", actuatorID).Msg("deleting actuator")
 	query := `DELETE FROM actuators WHERE device_id = $1 AND id = $2`
 	result, err := s.db.ExecContext(ctx, query, deviceID, actuatorID)
 	if err != nil {
@@ -850,6 +913,8 @@ func (s *Storer) DeleteActuator(ctx context.Context, deviceID, actuatorID string
 
 // ListActuators retrieves all actuators
 func (s *Storer) ListActuators(ctx context.Context) ([]*api.BaseActuator, error) {
+	ll := s.logCtx(ctx, "actuator")
+	ll.Debug().Msg("listing all actuators")
 	query := `
 		SELECT id, device_id, name, actuator_type, metadata, tags
 		FROM actuators 
@@ -867,6 +932,8 @@ func (s *Storer) ListActuators(ctx context.Context) ([]*api.BaseActuator, error)
 
 // ListActuatorsByDeviceID retrieves all actuators for a device
 func (s *Storer) ListActuatorsByDeviceID(ctx context.Context, deviceID string) ([]*api.BaseActuator, error) {
+	ll := s.logCtx(ctx, "actuator")
+	ll.Debug().Str("device_id", deviceID).Msg("listing actuators by device")
 	query := `
 		SELECT id, device_id, name, actuator_type, metadata, tags
 		FROM actuators 
@@ -885,6 +952,8 @@ func (s *Storer) ListActuatorsByDeviceID(ctx context.Context, deviceID string) (
 
 // GetActuatorByTag retrieves an actuator with a specific tag
 func (s *Storer) GetActuatorByTag(ctx context.Context, tag string) (*api.BaseActuator, error) {
+	ll := s.logCtx(ctx, "actuator")
+	ll.Debug().Str("tag", tag).Msg("getting actuator by tag")
 	query := `
 		SELECT id, device_id, name, actuator_type, metadata, tags
 		FROM actuators 
@@ -918,6 +987,8 @@ func (s *Storer) GetActuatorByTag(ctx context.Context, tag string) (*api.BaseAct
 
 // ListActuatorsByTagPrefix retrieves actuators with tags matching a prefix
 func (s *Storer) ListActuatorsByTagPrefix(ctx context.Context, prefix string) ([]*api.BaseActuator, error) {
+	ll := s.logCtx(ctx, "actuator")
+	ll.Debug().Str("prefix", prefix).Msg("listing actuators by tag prefix")
 	query := `
 		SELECT DISTINCT id, device_id, name, actuator_type, metadata, tags
 		FROM actuators, unnest(tags) AS tag
