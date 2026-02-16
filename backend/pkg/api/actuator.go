@@ -27,17 +27,8 @@ type ActuatorCommand struct {
 	Parameters map[string]float64 `json:"parameters,omitempty"` // e.g., "brightness": 75, "quantity": 100
 }
 
-// Actuator represents an abstract actuator interface
-type Actuator interface {
-	GetID() string
-	GetName() string
-	GetType() ActuatorType
-	GetTags() []string
-	DefaultTag(deviceID string) string
-}
-
-// BaseActuator provides a base implementation for actuators with tag support
-type BaseActuator struct {
+// Actuator provides a base implementation for actuators with tag support
+type Actuator struct {
 	ID           string            `json:"id"`
 	DeviceID     string            `json:"device_id"`
 	Name         string            `json:"name"`
@@ -46,47 +37,22 @@ type BaseActuator struct {
 	Tags         []string          `json:"tags,omitempty"`
 }
 
-func (a *BaseActuator) GetID() string {
+func (a *Actuator) GetID() string {
 	return a.ID
 }
 
-func (a *BaseActuator) GetName() string {
+func (a *Actuator) GetName() string {
 	return a.Name
 }
 
-func (a *BaseActuator) GetType() ActuatorType {
+func (a *Actuator) GetType() ActuatorType {
 	return a.ActuatorType
 }
 
-func (a *BaseActuator) GetTags() []string {
+func (a *Actuator) GetTags() []string {
 	return a.Tags
 }
 
-func (a *BaseActuator) DefaultTag(deviceID string) string {
+func (a *Actuator) DefaultTag(deviceID string) string {
 	return "device." + deviceID + ".actuator." + a.ID
-}
-
-// Relay represents a simple on/off relay actuator
-type Relay struct {
-	BaseActuator
-}
-
-// PeristalticPump represents a pump actuator for dispensing liquids
-type PeristalticPump struct {
-	BaseActuator
-}
-
-// DimmableLight represents a light with adjustable brightness
-type DimmableLight struct {
-	BaseActuator
-}
-
-// Servo represents a servo motor actuator
-type Servo struct {
-	BaseActuator
-}
-
-// Valve represents a valve actuator for controlling flow
-type Valve struct {
-	BaseActuator
 }

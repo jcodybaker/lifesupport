@@ -197,30 +197,30 @@ func TestCreateDeviceWithNestedSensorsAndActuators(t *testing.T) {
 		Name:        "Test Device With Sensors",
 		Description: "A test device with sensors and actuators",
 		Metadata:    map[string]string{"location": "greenhouse"},
-		Sensors: []api.Sensor{
-			&api.BaseSensor{
+		Sensors: []*api.Sensor{
+			{
 				ID:         "temp-sensor-1",
 				Name:       "Temperature Sensor",
 				SensorType: api.SensorTypeTemperature,
 				Metadata:   map[string]string{"unit": "celsius"},
 				Tags:       []string{"device.test-device-nested.sensor.temp-sensor-1", "greenhouse.temp"},
 			},
-			&api.BaseSensor{
+			{
 				ID:         "ph-sensor-1",
 				Name:       "pH Sensor",
 				SensorType: api.SensorTypePH,
 				Metadata:   map[string]string{"calibrated": "true"},
 			},
 		},
-		Actuators: []api.Actuator{
-			&api.BaseActuator{
+		Actuators: []*api.Actuator{
+			{
 				ID:           "pump-1",
 				Name:         "Water Pump",
 				ActuatorType: api.ActuatorTypePeristalticPump,
 				Metadata:     map[string]string{"flow_rate": "100"},
 				Tags:         []string{"device.test-device-nested.actuator.pump-1", "greenhouse.pump"},
 			},
-			&api.BaseActuator{
+			{
 				ID:           "light-1",
 				Name:         "Grow Light",
 				ActuatorType: api.ActuatorTypeDimmableLight,

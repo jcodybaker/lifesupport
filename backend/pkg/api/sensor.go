@@ -43,17 +43,8 @@ type SensorReading struct {
 	Error     string    `json:"error,omitempty"`
 }
 
-// Sensor represents an abstract sensor interface
-type Sensor interface {
-	GetID() string
-	GetName() string
-	GetType() SensorType
-	GetTags() []string
-	DefaultTag(deviceID string) string
-}
-
-// BaseSensor provides a base implementation for sensors with tag support
-type BaseSensor struct {
+// Sensor provides a base implementation for sensors with tag support
+type Sensor struct {
 	ID         string            `json:"id"`
 	DeviceID   string            `json:"device_id"`
 	Name       string            `json:"name"`
@@ -62,22 +53,22 @@ type BaseSensor struct {
 	Tags       []string          `json:"tags,omitempty"`
 }
 
-func (s *BaseSensor) GetID() string {
+func (s *Sensor) GetID() string {
 	return s.ID
 }
 
-func (s *BaseSensor) GetName() string {
+func (s *Sensor) GetName() string {
 	return s.Name
 }
 
-func (s *BaseSensor) GetType() SensorType {
+func (s *Sensor) GetType() SensorType {
 	return s.SensorType
 }
 
-func (s *BaseSensor) GetTags() []string {
+func (s *Sensor) GetTags() []string {
 	return s.Tags
 }
 
-func (s *BaseSensor) DefaultTag(deviceID string) string {
+func (s *Sensor) DefaultTag(deviceID string) string {
 	return "device." + deviceID + ".sensor." + s.ID
 }

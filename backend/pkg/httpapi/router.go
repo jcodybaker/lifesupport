@@ -12,9 +12,26 @@ func (h *Handler) SetupRouter() *mux.Router {
 
 	// Device endpoints
 	r.HandleFunc("/api/devices", h.CreateDevice).Methods("POST")
+	r.HandleFunc("/api/devices", h.ListDevices).Methods("GET")
 	r.HandleFunc("/api/devices/{id}", h.GetDevice).Methods("GET")
 	r.HandleFunc("/api/devices/{id}", h.UpdateDevice).Methods("PUT")
 	r.HandleFunc("/api/devices/{id}", h.DeleteDevice).Methods("DELETE")
+
+	// Sensor endpoints
+	r.HandleFunc("/api/sensors", h.CreateSensor).Methods("POST")
+	r.HandleFunc("/api/sensors", h.ListSensors).Methods("GET")
+	r.HandleFunc("/api/sensors/by-tag/{tag}", h.GetSensorByTag).Methods("GET")
+	r.HandleFunc("/api/sensors/{device_id}/{sensor_id}", h.GetSensor).Methods("GET")
+	r.HandleFunc("/api/sensors/{device_id}/{sensor_id}", h.UpdateSensor).Methods("PUT")
+	r.HandleFunc("/api/sensors/{device_id}/{sensor_id}", h.DeleteSensor).Methods("DELETE")
+
+	// Actuator endpoints
+	r.HandleFunc("/api/actuators", h.CreateActuator).Methods("POST")
+	r.HandleFunc("/api/actuators", h.ListActuators).Methods("GET")
+	r.HandleFunc("/api/actuators/by-tag/{tag}", h.GetActuatorByTag).Methods("GET")
+	r.HandleFunc("/api/actuators/{device_id}/{actuator_id}", h.GetActuator).Methods("GET")
+	r.HandleFunc("/api/actuators/{device_id}/{actuator_id}", h.UpdateActuator).Methods("PUT")
+	r.HandleFunc("/api/actuators/{device_id}/{actuator_id}", h.DeleteActuator).Methods("DELETE")
 
 	// Enable CORS
 	r.Use(CORSMiddleware)

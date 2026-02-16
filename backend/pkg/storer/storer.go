@@ -256,65 +256,61 @@ func (s *Storer) CreateDevice(ctx context.Context, dev *api.Device) error {
 
 	// Insert nested sensors
 	for _, sensor := range dev.Sensors {
-		if baseSensor, ok := sensor.(*api.BaseSensor); ok {
-			// Ensure device_id is set
-			baseSensor.DeviceID = dev.ID
+		// Ensure device_id is set
+		sensor.DeviceID = dev.ID
 
-			// Generate default tag if not provided
-			if len(baseSensor.Tags) == 0 {
-				baseSensor.Tags = []string{baseSensor.DefaultTag(dev.ID)}
-			}
+		// Generate default tag if not provided
+		if len(sensor.Tags) == 0 {
+			sensor.Tags = []string{sensor.DefaultTag(dev.ID)}
+		}
 
-			sensorMetadata, err := json.Marshal(baseSensor.Metadata)
-			if err != nil {
-				return fmt.Errorf("failed to marshal sensor metadata: %w", err)
-			}
+		sensorMetadata, err := json.Marshal(sensor.Metadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal sensor metadata: %w", err)
+		}
 
-			sensorQuery := `
+		sensorQuery := `
 				INSERT INTO sensors (id, device_id, name, sensor_type, metadata, tags, created_at, updated_at)
 				VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
 			`
-			_, err = tx.ExecContext(ctx, sensorQuery, baseSensor.ID, baseSensor.DeviceID, baseSensor.Name, baseSensor.SensorType, sensorMetadata, pq.Array(baseSensor.Tags))
-			if err != nil {
-				if pqErr, ok := err.(*pq.Error); ok {
-					if pqErr.Code == "23505" { // unique_violation
-						return fmt.Errorf("%w: sensor %s/%s", ErrAlreadyExists, baseSensor.DeviceID, baseSensor.ID)
-					}
+		_, err = tx.ExecContext(ctx, sensorQuery, sensor.ID, sensor.DeviceID, sensor.Name, sensor.SensorType, sensorMetadata, pq.Array(sensor.Tags))
+		if err != nil {
+			if pqErr, ok := err.(*pq.Error); ok {
+				if pqErr.Code == "23505" { // unique_violation
+					return fmt.Errorf("%w: sensor %s/%s", ErrAlreadyExists, sensor.DeviceID, sensor.ID)
 				}
-				return fmt.Errorf("failed to create sensor: %w", err)
 			}
+			return fmt.Errorf("failed to create sensor: %w", err)
 		}
 	}
 
 	// Insert nested actuators
 	for _, actuator := range dev.Actuators {
-		if baseActuator, ok := actuator.(*api.BaseActuator); ok {
-			// Ensure device_id is set
-			baseActuator.DeviceID = dev.ID
+		// Ensure device_id is set
+		actuator.DeviceID = dev.ID
 
-			// Generate default tag if not provided
-			if len(baseActuator.Tags) == 0 {
-				baseActuator.Tags = []string{baseActuator.DefaultTag(dev.ID)}
-			}
+		// Generate default tag if not provided
+		if len(actuator.Tags) == 0 {
+			actuator.Tags = []string{actuator.DefaultTag(dev.ID)}
+		}
 
-			actuatorMetadata, err := json.Marshal(baseActuator.Metadata)
-			if err != nil {
-				return fmt.Errorf("failed to marshal actuator metadata: %w", err)
-			}
+		actuatorMetadata, err := json.Marshal(actuator.Metadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal actuator metadata: %w", err)
+		}
 
-			actuatorQuery := `
+		actuatorQuery := `
 				INSERT INTO actuators (id, device_id, name, actuator_type, metadata, tags, created_at, updated_at)
 				VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
 			`
-			_, err = tx.ExecContext(ctx, actuatorQuery, baseActuator.ID, baseActuator.DeviceID, baseActuator.Name, baseActuator.ActuatorType, actuatorMetadata, pq.Array(baseActuator.Tags))
-			if err != nil {
-				if pqErr, ok := err.(*pq.Error); ok {
-					if pqErr.Code == "23505" { // unique_violation
-						return fmt.Errorf("%w: actuator %s/%s", ErrAlreadyExists, baseActuator.DeviceID, baseActuator.ID)
-					}
+		_, err = tx.ExecContext(ctx, actuatorQuery, actuator.ID, actuator.DeviceID, actuator.Name, actuator.ActuatorType, actuatorMetadata, pq.Array(actuator.Tags))
+		if err != nil {
+			if pqErr, ok := err.(*pq.Error); ok {
+				if pqErr.Code == "23505" { // unique_violation
+					return fmt.Errorf("%w: actuator %s/%s", ErrAlreadyExists, actuator.DeviceID, actuator.ID)
 				}
-				return fmt.Errorf("failed to create actuator: %w", err)
 			}
+			return fmt.Errorf("failed to create actuator: %w", err)
 		}
 	}
 
@@ -358,8 +354,83 @@ func (s *Storer) GetDevice(ctx context.Context, id string) (*api.Device, error) 
 
 	dev.Tags = tags
 
-	// Note: Sensors and Actuators are not stored in DB as they are interfaces
-	// They would be reconstructed by the application layer
+	// Fetch sensors for this device
+	sensorsQuery := `
+		SELECT id, device_id, name, sensor_type, metadata, tags
+		FROM sensors
+		WHERE device_id = $1
+	`
+	sensorRows, err := s.db.QueryContext(ctx, sensorsQuery, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sensors: %w", err)
+	}
+	defer sensorRows.Close()
+
+	for sensorRows.Next() {
+		var sensor api.Sensor
+		var sensorMetadataJSON []byte
+		var sensorTags []string
+
+		err := sensorRows.Scan(
+			&sensor.ID, &sensor.DeviceID, &sensor.Name, &sensor.SensorType,
+			&sensorMetadataJSON, pq.Array(&sensorTags),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan sensor: %w", err)
+		}
+
+		if len(sensorMetadataJSON) > 0 {
+			if err := json.Unmarshal(sensorMetadataJSON, &sensor.Metadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal sensor metadata: %w", err)
+			}
+		}
+
+		sensor.Tags = sensorTags
+		dev.Sensors = append(dev.Sensors, &sensor)
+	}
+
+	if err := sensorRows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating sensors: %w", err)
+	}
+
+	// Fetch actuators for this device
+	actuatorsQuery := `
+		SELECT id, device_id, name, actuator_type, metadata, tags
+		FROM actuators
+		WHERE device_id = $1
+	`
+	actuatorRows, err := s.db.QueryContext(ctx, actuatorsQuery, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query actuators: %w", err)
+	}
+	defer actuatorRows.Close()
+
+	for actuatorRows.Next() {
+		var actuator api.Actuator
+		var actuatorMetadataJSON []byte
+		var actuatorTags []string
+
+		err := actuatorRows.Scan(
+			&actuator.ID, &actuator.DeviceID, &actuator.Name, &actuator.ActuatorType,
+			&actuatorMetadataJSON, pq.Array(&actuatorTags),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan actuator: %w", err)
+		}
+
+		if len(actuatorMetadataJSON) > 0 {
+			if err := json.Unmarshal(actuatorMetadataJSON, &actuator.Metadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal actuator metadata: %w", err)
+			}
+		}
+
+		actuator.Tags = actuatorTags
+		dev.Actuators = append(dev.Actuators, &actuator)
+	}
+
+	if err := actuatorRows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating actuators: %w", err)
+	}
 
 	return &dev, nil
 }
@@ -548,7 +619,7 @@ func (s *Storer) scanDevices(rows *sql.Rows) ([]*api.Device, error) {
 // Sensor operations
 
 // CreateSensor creates a new sensor
-func (s *Storer) CreateSensor(ctx context.Context, sensor *api.BaseSensor) error {
+func (s *Storer) CreateSensor(ctx context.Context, sensor *api.Sensor) error {
 	ll := s.logCtx(ctx, "sensor")
 	ll.Debug().Str("device_id", sensor.DeviceID).Str("sensor_id", sensor.ID).Str("sensor_type", string(sensor.SensorType)).Msg("creating sensor")
 	metadata, err := json.Marshal(sensor.Metadata)
@@ -579,7 +650,7 @@ func (s *Storer) CreateSensor(ctx context.Context, sensor *api.BaseSensor) error
 }
 
 // GetSensor retrieves a sensor by device ID and sensor ID
-func (s *Storer) GetSensor(ctx context.Context, deviceID, sensorID string) (*api.BaseSensor, error) {
+func (s *Storer) GetSensor(ctx context.Context, deviceID, sensorID string) (*api.Sensor, error) {
 	ll := s.logCtx(ctx, "sensor")
 	ll.Debug().Str("device_id", deviceID).Str("sensor_id", sensorID).Msg("getting sensor")
 	query := `
@@ -588,7 +659,7 @@ func (s *Storer) GetSensor(ctx context.Context, deviceID, sensorID string) (*api
 		WHERE device_id = $1 AND id = $2
 	`
 
-	var sensor api.BaseSensor
+	var sensor api.Sensor
 	var metadataJSON []byte
 	var tags []string
 
@@ -613,7 +684,7 @@ func (s *Storer) GetSensor(ctx context.Context, deviceID, sensorID string) (*api
 }
 
 // UpdateSensor updates an existing sensor
-func (s *Storer) UpdateSensor(ctx context.Context, sensor *api.BaseSensor) error {
+func (s *Storer) UpdateSensor(ctx context.Context, sensor *api.Sensor) error {
 	ll := s.logCtx(ctx, "sensor")
 	ll.Debug().Str("device_id", sensor.DeviceID).Str("sensor_id", sensor.ID).Msg("updating sensor")
 	metadata, err := json.Marshal(sensor.Metadata)
@@ -669,7 +740,7 @@ func (s *Storer) DeleteSensor(ctx context.Context, deviceID, sensorID string) er
 }
 
 // ListSensors retrieves all sensors
-func (s *Storer) ListSensors(ctx context.Context) ([]*api.BaseSensor, error) {
+func (s *Storer) ListSensors(ctx context.Context) ([]*api.Sensor, error) {
 	ll := s.logCtx(ctx, "sensor")
 	ll.Debug().Msg("listing all sensors")
 	query := `
@@ -688,7 +759,7 @@ func (s *Storer) ListSensors(ctx context.Context) ([]*api.BaseSensor, error) {
 }
 
 // ListSensorsByDeviceID retrieves all sensors for a device
-func (s *Storer) ListSensorsByDeviceID(ctx context.Context, deviceID string) ([]*api.BaseSensor, error) {
+func (s *Storer) ListSensorsByDeviceID(ctx context.Context, deviceID string) ([]*api.Sensor, error) {
 	ll := s.logCtx(ctx, "sensor")
 	ll.Debug().Str("device_id", deviceID).Msg("listing sensors by device")
 	query := `
@@ -708,7 +779,7 @@ func (s *Storer) ListSensorsByDeviceID(ctx context.Context, deviceID string) ([]
 }
 
 // GetSensorByTag retrieves a sensor with a specific tag
-func (s *Storer) GetSensorByTag(ctx context.Context, tag string) (*api.BaseSensor, error) {
+func (s *Storer) GetSensorByTag(ctx context.Context, tag string) (*api.Sensor, error) {
 	ll := s.logCtx(ctx, "sensor")
 	ll.Debug().Str("tag", tag).Msg("getting sensor by tag")
 	query := `
@@ -718,7 +789,7 @@ func (s *Storer) GetSensorByTag(ctx context.Context, tag string) (*api.BaseSenso
 		LIMIT 1
 	`
 
-	var sensor api.BaseSensor
+	var sensor api.Sensor
 	var metadataJSON []byte
 	var tags []string
 
@@ -743,7 +814,7 @@ func (s *Storer) GetSensorByTag(ctx context.Context, tag string) (*api.BaseSenso
 }
 
 // ListSensorsByTagPrefix retrieves sensors with tags matching a prefix
-func (s *Storer) ListSensorsByTagPrefix(ctx context.Context, prefix string) ([]*api.BaseSensor, error) {
+func (s *Storer) ListSensorsByTagPrefix(ctx context.Context, prefix string) ([]*api.Sensor, error) {
 	ll := s.logCtx(ctx, "sensor")
 	ll.Debug().Str("prefix", prefix).Msg("listing sensors by tag prefix")
 	query := `
@@ -763,10 +834,10 @@ func (s *Storer) ListSensorsByTagPrefix(ctx context.Context, prefix string) ([]*
 }
 
 // scanSensors is a helper to scan sensor rows
-func (s *Storer) scanSensors(rows *sql.Rows) ([]*api.BaseSensor, error) {
-	var sensors []*api.BaseSensor
+func (s *Storer) scanSensors(rows *sql.Rows) ([]*api.Sensor, error) {
+	var sensors []*api.Sensor
 	for rows.Next() {
-		var sensor api.BaseSensor
+		var sensor api.Sensor
 		var metadataJSON []byte
 		var tags []string
 
@@ -791,7 +862,7 @@ func (s *Storer) scanSensors(rows *sql.Rows) ([]*api.BaseSensor, error) {
 // Actuator operations
 
 // CreateActuator creates a new actuator
-func (s *Storer) CreateActuator(ctx context.Context, actuator *api.BaseActuator) error {
+func (s *Storer) CreateActuator(ctx context.Context, actuator *api.Actuator) error {
 	ll := s.logCtx(ctx, "actuator")
 	ll.Debug().Str("device_id", actuator.DeviceID).Str("actuator_id", actuator.ID).Str("actuator_type", string(actuator.ActuatorType)).Msg("creating actuator")
 	metadata, err := json.Marshal(actuator.Metadata)
@@ -822,7 +893,7 @@ func (s *Storer) CreateActuator(ctx context.Context, actuator *api.BaseActuator)
 }
 
 // GetActuator retrieves an actuator by device ID and actuator ID
-func (s *Storer) GetActuator(ctx context.Context, deviceID, actuatorID string) (*api.BaseActuator, error) {
+func (s *Storer) GetActuator(ctx context.Context, deviceID, actuatorID string) (*api.Actuator, error) {
 	ll := s.logCtx(ctx, "actuator")
 	ll.Debug().Str("device_id", deviceID).Str("actuator_id", actuatorID).Msg("getting actuator")
 	query := `
@@ -831,7 +902,7 @@ func (s *Storer) GetActuator(ctx context.Context, deviceID, actuatorID string) (
 		WHERE device_id = $1 AND id = $2
 	`
 
-	var actuator api.BaseActuator
+	var actuator api.Actuator
 	var metadataJSON []byte
 	var tags []string
 
@@ -856,7 +927,7 @@ func (s *Storer) GetActuator(ctx context.Context, deviceID, actuatorID string) (
 }
 
 // UpdateActuator updates an existing actuator
-func (s *Storer) UpdateActuator(ctx context.Context, actuator *api.BaseActuator) error {
+func (s *Storer) UpdateActuator(ctx context.Context, actuator *api.Actuator) error {
 	ll := s.logCtx(ctx, "actuator")
 	ll.Debug().Str("device_id", actuator.DeviceID).Str("actuator_id", actuator.ID).Msg("updating actuator")
 	metadata, err := json.Marshal(actuator.Metadata)
@@ -912,7 +983,7 @@ func (s *Storer) DeleteActuator(ctx context.Context, deviceID, actuatorID string
 }
 
 // ListActuators retrieves all actuators
-func (s *Storer) ListActuators(ctx context.Context) ([]*api.BaseActuator, error) {
+func (s *Storer) ListActuators(ctx context.Context) ([]*api.Actuator, error) {
 	ll := s.logCtx(ctx, "actuator")
 	ll.Debug().Msg("listing all actuators")
 	query := `
@@ -931,7 +1002,7 @@ func (s *Storer) ListActuators(ctx context.Context) ([]*api.BaseActuator, error)
 }
 
 // ListActuatorsByDeviceID retrieves all actuators for a device
-func (s *Storer) ListActuatorsByDeviceID(ctx context.Context, deviceID string) ([]*api.BaseActuator, error) {
+func (s *Storer) ListActuatorsByDeviceID(ctx context.Context, deviceID string) ([]*api.Actuator, error) {
 	ll := s.logCtx(ctx, "actuator")
 	ll.Debug().Str("device_id", deviceID).Msg("listing actuators by device")
 	query := `
@@ -951,7 +1022,7 @@ func (s *Storer) ListActuatorsByDeviceID(ctx context.Context, deviceID string) (
 }
 
 // GetActuatorByTag retrieves an actuator with a specific tag
-func (s *Storer) GetActuatorByTag(ctx context.Context, tag string) (*api.BaseActuator, error) {
+func (s *Storer) GetActuatorByTag(ctx context.Context, tag string) (*api.Actuator, error) {
 	ll := s.logCtx(ctx, "actuator")
 	ll.Debug().Str("tag", tag).Msg("getting actuator by tag")
 	query := `
@@ -961,7 +1032,7 @@ func (s *Storer) GetActuatorByTag(ctx context.Context, tag string) (*api.BaseAct
 		LIMIT 1
 	`
 
-	var actuator api.BaseActuator
+	var actuator api.Actuator
 	var metadataJSON []byte
 	var tags []string
 
@@ -986,7 +1057,7 @@ func (s *Storer) GetActuatorByTag(ctx context.Context, tag string) (*api.BaseAct
 }
 
 // ListActuatorsByTagPrefix retrieves actuators with tags matching a prefix
-func (s *Storer) ListActuatorsByTagPrefix(ctx context.Context, prefix string) ([]*api.BaseActuator, error) {
+func (s *Storer) ListActuatorsByTagPrefix(ctx context.Context, prefix string) ([]*api.Actuator, error) {
 	ll := s.logCtx(ctx, "actuator")
 	ll.Debug().Str("prefix", prefix).Msg("listing actuators by tag prefix")
 	query := `
@@ -1006,10 +1077,10 @@ func (s *Storer) ListActuatorsByTagPrefix(ctx context.Context, prefix string) ([
 }
 
 // scanActuators is a helper to scan actuator rows
-func (s *Storer) scanActuators(rows *sql.Rows) ([]*api.BaseActuator, error) {
-	var actuators []*api.BaseActuator
+func (s *Storer) scanActuators(rows *sql.Rows) ([]*api.Actuator, error) {
+	var actuators []*api.Actuator
 	for rows.Next() {
-		var actuator api.BaseActuator
+		var actuator api.Actuator
 		var metadataJSON []byte
 		var tags []string
 

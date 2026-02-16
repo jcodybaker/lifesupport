@@ -141,13 +141,11 @@ func (d *Driver) deviceInfoToDevice(info *shelly.ShellyGetDeviceInfoResponse, co
 		} else {
 			name = fmt.Sprintf("%s Switch %d", dev.Name, s.ID)
 		}
-		r := &api.Relay{
-			BaseActuator: api.BaseActuator{
-				ID:           fmt.Sprintf("switch:%d", s.ID),
-				ActuatorType: api.ActuatorTypeRelay,
-				DeviceID:     dev.ID,
-				Name:         name,
-			},
+		r := &api.Actuator{
+			ID:           fmt.Sprintf("switch:%d", s.ID),
+			ActuatorType: api.ActuatorTypeRelay,
+			DeviceID:     dev.ID,
+			Name:         name,
 		}
 
 		r.Tags = []string{r.DefaultTag(dev.ID)}
