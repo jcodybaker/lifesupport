@@ -303,16 +303,19 @@
 
 <style>
   .workflow-manager {
-    padding: 1rem;
+    padding: 0;
   }
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.75rem;
     flex-wrap: wrap;
-    gap: 1rem;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    background: #40E0D0;
+    border-radius: 15px;
   }
 
   .header-actions {
@@ -325,123 +328,149 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.9rem;
-    color: #666;
+    font-size: 0.75rem;
+    color: #0A1929;
     cursor: pointer;
     user-select: none;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: #AFEEEE;
+    padding: 0.35rem 0.75rem;
+    border-radius: 12px;
   }
 
   .auto-refresh-toggle input {
     cursor: pointer;
+    width: 14px;
+    height: 14px;
   }
 
   h2 {
     margin: 0;
-    color: #333;
+    color: #0A1929;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 1.3rem;
+    font-weight: 700;
   }
 
   h3 {
-    margin: 0 0 1rem 0;
-    color: #555;
-    font-size: 1.2rem;
+    margin: 0 0 0.5rem 0;
+    color: #E0FFFF;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
   }
 
   h4 {
-    margin: 0 0 0.75rem 0;
-    color: #666;
-    font-size: 1rem;
-    border-bottom: 2px solid #e0e0e0;
-    padding-bottom: 0.5rem;
+    margin: 0 0 0.4rem 0;
+    color: #40E0D0;
+    font-size: 0.85rem;
+    border-bottom: 2px solid #66CDAA;
+    padding-bottom: 0.3rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
   }
 
   .btn {
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 1rem;
     border: none;
-    border-radius: 4px;
+    border-radius: 15px;
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
     transition: all 0.2s;
     white-space: nowrap;
   }
 
   .btn:disabled {
-    opacity: 0.6;
+    opacity: 0.4;
     cursor: not-allowed;
   }
 
   .btn-primary {
-    background-color: #4CAF50;
-    color: white;
+    background-color: #AFEEEE;
+    color: #0A1929;
   }
 
   .btn-primary:hover:not(:disabled) {
-    background-color: #45a049;
+    background-color: #E0FFFF;
+    transform: translateY(-1px);
+    box-shadow: 0 0 10px rgba(175, 238, 238, 0.5);
   }
 
   .btn-secondary {
-    background-color: #757575;
-    color: white;
+    background-color: #66CDAA;
+    color: #0A1929;
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background-color: #616161;
+    background-color: #7FFFD4;
+    transform: translateY(-1px);
   }
 
   .error-message {
-    background-color: #ffebee;
-    color: #c62828;
-    padding: 0.75rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
-    border-left: 4px solid #c62828;
+    background-color: #FF7F50;
+    color: #0A1929;
+    padding: 0.6rem 1rem;
+    border-radius: 15px;
+    margin-bottom: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.8rem;
   }
 
   .content {
     display: grid;
     grid-template-columns: 1fr 2fr;
-    gap: 1.5rem;
+    gap: 0.75rem;
   }
 
   .workflow-list {
-    background-color: white;
-    border-radius: 8px;
-    padding: 1rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    background-color: #0F2030;
+    border-radius: 15px;
+    padding: 0.75rem;
+    border: 2px solid #40E0D0;
   }
 
   .workflow-items {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
 
   .workflow-item {
-    padding: 1rem;
-    background-color: #f9f9f9;
-    border-radius: 6px;
+    padding: 0.6rem 1rem;
+    background: linear-gradient(to right, #AFEEEE 0%, #AFEEEE 95%, #E0FFFF 95%, #E0FFFF 100%);
+    border-radius: 15px;
     cursor: pointer;
     transition: all 0.2s;
     border: 2px solid transparent;
   }
 
   .workflow-item:hover {
-    background-color: #f0f0f0;
+    background: linear-gradient(to right, #E0FFFF 0%, #E0FFFF 95%, #FFFFFF 95%, #FFFFFF 100%);
+    transform: translateX(3px);
   }
 
   .workflow-item.selected {
-    background-color: #e3f2fd;
-    border-color: #2196F3;
+    background: linear-gradient(to right, #20B2AA 0%, #20B2AA 95%, #00CED1 95%, #00CED1 100%);
+    box-shadow: 0 0 15px rgba(32, 178, 170, 0.5);
   }
 
   .workflow-header {
     display: flex;
     align-items: flex-start;
-    gap: 0.75rem;
-    margin-bottom: 0.5rem;
+    gap: 0.6rem;
+    margin-bottom: 0.3rem;
   }
 
   .workflow-icon {
-    font-size: 1.5rem;
+    font-size: 1.2rem;
   }
 
   .workflow-info {
@@ -450,157 +479,187 @@
 
   .workflow-id {
     font-family: monospace;
-    font-size: 0.85rem;
-    color: #666;
+    font-size: 0.7rem;
+    color: #0A1929;
     word-break: break-all;
+    opacity: 0.7;
   }
 
   .workflow-time {
-    font-size: 0.8rem;
-    color: #999;
-    margin-top: 0.25rem;
+    font-size: 0.7rem;
+    color: #0A1929;
+    margin-top: 0.15rem;
+    font-weight: 600;
+    opacity: 0.7;
   }
 
   .workflow-status {
-    font-weight: 600;
-    font-size: 0.9rem;
-    margin-bottom: 0.25rem;
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-bottom: 0.15rem;
+    color: #0A1929;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .workflow-duration {
-    font-size: 0.85rem;
-    color: #777;
+    font-size: 0.75rem;
+    color: #0A1929;
+    font-weight: 600;
+    opacity: 0.8;
   }
 
   .workflow-details {
-    background-color: white;
-    border-radius: 8px;
-    padding: 1rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    background-color: #0F2030;
+    border-radius: 15px;
+    padding: 0.75rem;
+    border: 2px solid #66CDAA;
   }
 
   .details-content {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.5rem;
   }
 
   .detail-card {
-    background-color: #fafafa;
-    padding: 1rem;
-    border-radius: 6px;
-    border-left: 4px solid #e0e0e0;
+    background-color: #1A2F3F;
+    padding: 0.75rem;
+    border-radius: 12px;
+    border-left: 4px solid #40E0D0;
   }
 
   .error-card {
-    background-color: #ffebee;
-    border-left-color: #f44336;
+    background-color: #1F1A1A;
+    border-left-color: #FF7F50;
   }
 
   .success-card {
-    background-color: #e8f5e9;
-    border-left-color: #4CAF50;
+    background-color: #1A2F28;
+    border-left-color: #AFEEEE;
   }
 
   .info-card {
-    background-color: #e3f2fd;
-    border-left-color: #2196F3;
+    background-color: #1A252F;
+    border-left-color: #40E0D0;
   }
 
   .status-display {
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 1rem;
-    background-color: white;
-    border-radius: 6px;
-    border-left: 4px solid;
+    padding: 0.75rem 1rem;
+    background: linear-gradient(135deg, #40E0D0 0%, #66CDAA 100%);
+    border-radius: 15px;
+    border: 2px solid #AFEEEE;
   }
 
   .status-icon {
-    font-size: 2rem;
+    font-size: 1.8rem;
   }
 
   .status-text {
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #0A1929;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
   }
 
   dl {
     margin: 0;
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 0.5rem 1rem;
+    gap: 0.4rem 1rem;
   }
 
   dt {
-    font-weight: 600;
-    color: #666;
+    font-weight: 700;
+    color: #40E0D0;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75rem;
   }
 
   dd {
     margin: 0;
-    color: #333;
+    color: #E0FFFF;
+    font-weight: 500;
+    font-size: 0.8rem;
   }
 
   .monospace {
     font-family: monospace;
-    font-size: 0.9rem;
+    font-size: 0.75rem;
     word-break: break-all;
+    color: #7FDBFF;
   }
 
   .error-content {
-    background-color: white;
-    padding: 1rem;
-    border-radius: 4px;
+    background-color: #0A1929;
+    padding: 0.75rem;
+    border-radius: 10px;
     font-family: monospace;
-    font-size: 0.85rem;
-    color: #c62828;
+    font-size: 0.75rem;
+    color: #FF7F50;
     white-space: pre-wrap;
     word-break: break-word;
+    border: 2px solid #FF7F50;
   }
 
   .result-summary {
-    background-color: white;
-    padding: 0.75rem;
-    border-radius: 4px;
-    font-weight: 600;
-    color: #2e7d32;
-    margin-bottom: 1rem;
+    background: linear-gradient(to right, #AFEEEE 0%, #E0FFFF 100%);
+    padding: 0.6rem 1rem;
+    border-radius: 12px;
+    font-weight: 700;
+    color: #0A1929;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.8rem;
   }
 
   .discovered-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
 
   .tag-item {
-    background-color: white;
-    color: #2e7d32;
-    padding: 0.5rem 0.75rem;
-    border-radius: 4px;
+    background: linear-gradient(135deg, #40E0D0 0%, #7FDBFF 100%);
+    color: #0A1929;
+    padding: 0.4rem 0.75rem;
+    border-radius: 12px;
     font-family: monospace;
-    font-size: 0.85rem;
-    border: 1px solid #a5d6a7;
+    font-size: 0.75rem;
+    border: 2px solid #AFEEEE;
+    font-weight: 700;
   }
 
   .no-results {
-    color: #999;
+    color: #66CDAA;
     font-style: italic;
     text-align: center;
-    padding: 1rem;
+    padding: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.75rem;
   }
 
   .loading,
   .empty-state {
     text-align: center;
-    color: #999;
-    padding: 2rem;
+    color: #E0FFFF;
+    padding: 1.5rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
   }
 
   .info-card p {
-    margin: 0 0 1rem 0;
-    color: #666;
+    margin: 0 0 0.5rem 0;
+    color: #E0FFFF;
+    line-height: 1.5;
+    font-size: 0.8rem;
   }
 </style>

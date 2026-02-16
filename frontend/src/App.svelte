@@ -11,8 +11,10 @@
 
 <main>
   <header class="app-header">
-    <h1>🌱 Life Support System</h1>
-    <p class="subtitle">Device & Workflow Management</p>
+    <div>
+      <h1>LIFE SUPPORT</h1>
+      <p class="subtitle">Device & Workflow Control</p>
+    </div>
   </header>
 
   <nav class="tabs">
@@ -21,14 +23,14 @@
       class:active={activeTab === 'devices'}
       on:click={() => setActiveTab('devices')}
     >
-      📱 Devices
+      DEVICES
     </button>
     <button 
       class="tab" 
       class:active={activeTab === 'workflows'}
       on:click={() => setActiveTab('workflows')}
     >
-      🔍 Discovery
+      DISCOVERY
     </button>
   </nav>
 
@@ -45,70 +47,111 @@
   :global(body) {
     margin: 0;
     padding: 0;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #0A1929;
     min-height: 100vh;
   }
 
   main {
-    max-width: 1400px;
+    max-width: 1600px;
     margin: 0 auto;
     min-height: 100vh;
+    padding: 0.5rem;
   }
 
   .app-header {
-    text-align: center;
-    padding: 2rem 1rem 1rem 1rem;
-    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.5rem;
+    background: #20B2AA;
+    border-radius: 0 0 25px 25px;
+    margin-bottom: 0.5rem;
+    position: relative;
+  }
+
+  .app-header::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 20px;
+    height: 100%;
+    background: #008B8B;
+    border-radius: 0 0 0 25px;
+  }
+
+  .app-header::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 40px;
+    height: 100%;
+    background: #40E0D0;
+    border-radius: 0 0 25px 0;
   }
 
   h1 {
     margin: 0;
-    font-size: 2.5rem;
+    font-size: 1.8rem;
     font-weight: 700;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+    color: #0A1929;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    z-index: 1;
   }
 
   .subtitle {
-    margin: 0.5rem 0 0 0;
-    font-size: 1.1rem;
-    opacity: 0.9;
+    margin: 0.2rem 0 0 0;
+    font-size: 0.75rem;
+    color: #0F2537;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 600;
+    z-index: 1;
   }
 
   .tabs {
     display: flex;
-    justify-content: center;
     gap: 0.5rem;
-    padding: 1rem;
+    padding: 0.5rem 1rem;
+    background: #1A2F3F;
+    border-radius: 20px;
+    margin-bottom: 0.5rem;
   }
 
   .tab {
-    padding: 0.75rem 2rem;
+    padding: 0.5rem 1.5rem;
     border: none;
-    background-color: rgba(255, 255, 255, 0.2);
-    color: white;
-    border-radius: 8px 8px 0 0;
+    background: #40E0D0;
+    color: #0A1929;
+    border-radius: 15px;
     cursor: pointer;
-    font-size: 1rem;
-    font-weight: 500;
-    transition: all 0.3s;
-    backdrop-filter: blur(10px);
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
   }
 
   .tab:hover {
-    background-color: rgba(255, 255, 255, 0.3);
+    background: #7FDBFF;
+    transform: translateY(-1px);
   }
 
   .tab.active {
-    background-color: white;
-    color: #667eea;
-    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+    background: #00CED1;
+    color: #0A1929;
+    box-shadow: 0 0 15px rgba(0, 206, 209, 0.5);
   }
 
   .tab-content {
-    background-color: white;
-    border-radius: 12px;
-    margin: 0 1rem 1rem 1rem;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    min-height: calc(100vh - 250px);
+    background: #1A2F3F;
+    border-radius: 20px;
+    padding: 1rem;
+    min-height: calc(100vh - 200px);
+    border: 2px solid #66CDAA;
   }
 </style>

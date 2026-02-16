@@ -402,161 +402,202 @@
 
 <style>
   .device-manager {
-    padding: 1rem;
+    padding: 0;
   }
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.75rem;
+    padding: 0.6rem 1rem;
+    background: #20B2AA;
+    border-radius: 15px;
   }
 
   h2 {
     margin: 0;
-    color: #333;
+    color: #0A1929;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 1.3rem;
+    font-weight: 700;
   }
 
   h3 {
-    margin: 0 0 1rem 0;
-    color: #555;
-    font-size: 1.2rem;
+    margin: 0 0 0.5rem 0;
+    color: #E0FFFF;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
   }
 
   h4 {
-    margin: 0 0 0.75rem 0;
-    color: #666;
-    font-size: 1rem;
-    border-bottom: 2px solid #e0e0e0;
-    padding-bottom: 0.5rem;
+    margin: 0 0 0.4rem 0;
+    color: #40E0D0;
+    font-size: 0.85rem;
+    border-bottom: 2px solid #66CDAA;
+    padding-bottom: 0.3rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
   }
 
   .btn {
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 1rem;
     border: none;
-    border-radius: 4px;
+    border-radius: 15px;
     cursor: pointer;
-    font-size: 0.9rem;
-    transition: background-color 0.2s;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    transition: all 0.2s;
   }
 
   .btn-primary {
-    background-color: #4CAF50;
-    color: white;
+    background-color: #40E0D0;
+    color: #0A1929;
   }
 
   .btn-primary:hover {
-    background-color: #45a049;
+    background-color: #7FDBFF;
+    transform: translateY(-1px);
+    box-shadow: 0 0 10px rgba(64, 224, 208, 0.5);
   }
 
   .btn-secondary {
-    background-color: #757575;
-    color: white;
+    background-color: #66CDAA;
+    color: #0A1929;
   }
 
   .btn-secondary:hover {
-    background-color: #616161;
+    background-color: #7FFFD4;
+    transform: translateY(-1px);
   }
 
   .btn-icon {
-    background: none;
+    background: #FF7F50;
     border: none;
     cursor: pointer;
-    font-size: 1.2rem;
-    padding: 0.25rem;
-    transition: transform 0.2s;
+    font-size: 1rem;
+    padding: 0.35rem;
+    border-radius: 50%;
+    transition: all 0.2s;
+    color: #0A1929;
   }
 
   .btn-icon:hover {
-    transform: scale(1.2);
+    transform: scale(1.1);
+    background: #FFA07A;
+    box-shadow: 0 0 8px rgba(255, 127, 80, 0.5);
   }
 
   .error-message {
-    background-color: #ffebee;
-    color: #c62828;
-    padding: 0.75rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
-    border-left: 4px solid #c62828;
+    background-color: #FF7F50;
+    color: #0A1929;
+    padding: 0.6rem 1rem;
+    border-radius: 15px;
+    margin-bottom: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.8rem;
   }
 
   .form-container {
-    background-color: #f5f5f5;
-    padding: 1.5rem;
-    border-radius: 8px;
-    margin-bottom: 1.5rem;
+    background-color: #0F2030;
+    padding: 1rem;
+    border-radius: 15px;
+    margin-bottom: 0.75rem;
+    border: 2px solid #40E0D0;
   }
 
   .form-group {
-    margin-bottom: 1rem;
+    margin-bottom: 0.6rem;
   }
 
   .form-group label {
     display: block;
-    margin-bottom: 0.25rem;
-    font-weight: 500;
-    color: #555;
+    margin-bottom: 0.3rem;
+    font-weight: 700;
+    color: #E0FFFF;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75rem;
   }
 
   .form-group input,
   .form-group select,
   .form-group textarea {
     width: 100%;
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 0.9rem;
+    padding: 0.4rem 0.6rem;
+    border: 2px solid #66CDAA;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    background: #0A1929;
+    color: #E0FFFF;
+    font-weight: 500;
+  }
+
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    outline: none;
+    border-color: #40E0D0;
+    box-shadow: 0 0 8px rgba(64, 224, 208, 0.3);
   }
 
   .form-group textarea {
-    min-height: 80px;
+    min-height: 60px;
     resize: vertical;
+    font-family: monospace;
   }
 
   .form-actions {
     display: flex;
     gap: 0.5rem;
-    margin-top: 1rem;
+    margin-top: 0.75rem;
   }
 
   .content {
     display: grid;
     grid-template-columns: 1fr 2fr;
-    gap: 1.5rem;
+    gap: 0.75rem;
   }
 
   .device-list {
-    background-color: white;
-    border-radius: 8px;
-    padding: 1rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    background-color: #0F2030;
+    border-radius: 15px;
+    padding: 0.75rem;
+    border: 2px solid #20B2AA;
   }
 
   .device-items {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
 
   .device-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem;
-    background-color: #f9f9f9;
-    border-radius: 6px;
+    padding: 0.6rem 1rem;
+    background: linear-gradient(to right, #40E0D0 0%, #40E0D0 95%, #7FDBFF 95%, #7FDBFF 100%);
+    border-radius: 15px;
     cursor: pointer;
     transition: all 0.2s;
     border: 2px solid transparent;
   }
 
   .device-item:hover {
-    background-color: #f0f0f0;
+    background: linear-gradient(to right, #7FDBFF 0%, #7FDBFF 95%, #AFEEEE 95%, #AFEEEE 100%);
+    transform: translateX(3px);
   }
 
   .device-item.selected {
-    background-color: #e8f5e9;
-    border-color: #4CAF50;
+    background: linear-gradient(to right, #20B2AA 0%, #20B2AA 95%, #00CED1 95%, #00CED1 100%);
+    box-shadow: 0 0 15px rgba(32, 178, 170, 0.5);
   }
 
   .device-info {
@@ -564,91 +605,106 @@
   }
 
   .device-name {
-    font-weight: 600;
-    color: #333;
-    margin-bottom: 0.25rem;
+    font-weight: 700;
+    color: #0A1929;
+    margin-bottom: 0.15rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.9rem;
   }
 
   .device-id {
-    font-size: 0.85rem;
-    color: #666;
+    font-size: 0.7rem;
+    color: #0A1929;
     font-family: monospace;
+    opacity: 0.7;
   }
 
   .device-driver {
     display: inline-block;
-    font-size: 0.75rem;
-    background-color: #2196F3;
-    color: white;
+    font-size: 0.65rem;
+    background-color: #AFEEEE;
+    color: #0A1929;
     padding: 0.15rem 0.5rem;
-    border-radius: 12px;
-    margin-top: 0.25rem;
+    border-radius: 10px;
+    margin-top: 0.3rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .device-stats {
-    margin-top: 0.5rem;
-    font-size: 0.85rem;
-    color: #777;
+    margin-top: 0.3rem;
+    font-size: 0.7rem;
+    color: #0A1929;
+    opacity: 0.8;
   }
 
   .stat {
-    margin-right: 0.75rem;
+    margin-right: 0.5rem;
+    font-weight: 600;
   }
 
   .device-actions {
     display: flex;
-    gap: 0.25rem;
+    gap: 0.3rem;
   }
 
   .device-details {
-    background-color: white;
-    border-radius: 8px;
-    padding: 1rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    background-color: #0F2030;
+    border-radius: 15px;
+    padding: 0.75rem;
+    border: 2px solid #66CDAA;
   }
 
   .details-content {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 0.75rem;
   }
 
   .detail-section {
-    background-color: #fafafa;
-    padding: 1rem;
-    border-radius: 6px;
+    background-color: #1A2F3F;
+    padding: 0.75rem;
+    border-radius: 12px;
+    border-left: 4px solid #40E0D0;
   }
 
   dl {
     margin: 0;
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 0.5rem 1rem;
+    gap: 0.4rem 1rem;
   }
 
   dt {
-    font-weight: 600;
-    color: #666;
+    font-weight: 700;
+    color: #40E0D0;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75rem;
   }
 
   dd {
     margin: 0;
-    color: #333;
+    color: #E0FFFF;
+    font-weight: 500;
+    font-size: 0.8rem;
   }
 
   .sensor-list,
   .actuator-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.5rem;
   }
 
   .sensor-card,
   .actuator-card {
-    background-color: white;
-    padding: 1rem;
-    border-radius: 6px;
-    border: 1px solid #e0e0e0;
+    background: linear-gradient(135deg, #66CDAA 0%, #40E0D0 100%);
+    padding: 0.75rem;
+    border-radius: 12px;
+    border: 2px solid #AFEEEE;
   }
 
   .sensor-header,
@@ -656,97 +712,117 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.4rem;
   }
 
   .sensor-name,
   .actuator-name {
-    font-weight: 600;
-    color: #333;
+    font-weight: 700;
+    color: #0A1929;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.85rem;
   }
 
   .sensor-type,
   .actuator-type {
-    font-size: 0.75rem;
-    background-color: #9C27B0;
-    color: white;
+    font-size: 0.65rem;
+    background-color: #AFEEEE;
+    color: #0A1929;
     padding: 0.15rem 0.5rem;
-    border-radius: 12px;
+    border-radius: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .sensor-id,
   .actuator-id {
-    font-size: 0.8rem;
-    color: #999;
+    font-size: 0.7rem;
+    color: #0A1929;
     font-family: monospace;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.4rem;
+    opacity: 0.7;
   }
 
   .sensor-reading,
   .actuator-state {
-    border-top: 1px solid #f0f0f0;
-    padding-top: 0.75rem;
+    border-top: 2px solid rgba(10, 25, 41, 0.3);
+    padding-top: 0.5rem;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.2rem;
   }
 
   .reading-value {
     font-size: 1.2rem;
-    font-weight: 600;
-    color: #4CAF50;
+    font-weight: 700;
+    color: #E0FFFF;
+    text-shadow: 0 0 8px rgba(224, 255, 255, 0.5);
   }
 
   .reading-time,
   .state-time {
-    font-size: 0.75rem;
-    color: #999;
+    font-size: 0.65rem;
+    color: #0A1929;
+    opacity: 0.7;
+    font-weight: 600;
   }
 
   .reading-error {
-    color: #f44336;
-    font-size: 0.8rem;
-    font-weight: 600;
+    color: #FF7F50;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .state-status {
-    font-weight: 600;
+    font-weight: 700;
+    font-size: 0.95rem;
   }
 
   .state-status.active {
-    color: #4CAF50;
+    color: #E0FFFF;
+    text-shadow: 0 0 8px rgba(224, 255, 255, 0.5);
   }
 
   .state-params {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+    gap: 0.3rem;
+    margin-top: 0.3rem;
   }
 
   .param {
-    font-size: 0.8rem;
-    background-color: #e3f2fd;
-    color: #1976D2;
+    font-size: 0.7rem;
+    background-color: #20B2AA;
+    color: #0A1929;
     padding: 0.15rem 0.5rem;
-    border-radius: 4px;
+    border-radius: 8px;
+    font-weight: 700;
   }
 
   .loading,
   .loading-small,
   .empty-state {
     text-align: center;
-    color: #999;
-    padding: 2rem;
+    color: #E0FFFF;
+    padding: 1.5rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
   }
 
   .loading-small {
-    padding: 1rem;
+    padding: 0.75rem;
   }
 
   .no-data {
-    color: #999;
+    color: #66CDAA;
     font-style: italic;
-    font-size: 0.85rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 </style>
