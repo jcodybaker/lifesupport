@@ -10,9 +10,11 @@ import (
 
 	"lifesupport/backend/pkg/httpapi"
 	"lifesupport/backend/pkg/storer"
+	"lifesupport/backend/pkg/temporallog"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"go.temporal.io/sdk/client"
 )
 
 var httpCmd = &cobra.Command{
@@ -23,12 +25,14 @@ var httpCmd = &cobra.Command{
 }
 
 var (
-	httpPort string
+	httpPort     string
+	temporalHost string
 )
 
 func init() {
 	rootCmd.AddCommand(httpCmd)
 	httpCmd.Flags().StringVarP(&httpPort, "port", "p", "8080", "Port to run the HTTP server on")
+	httpCmd.Flags().StringVar(&temporalHost, "temporal-host", "localhost:7233", "Temporal server host:port")
 }
 
 func runHTTPServer(cmd *cobra.Command, args []string) {
@@ -50,8 +54,37 @@ func runHTTPServer(cmd *cobra.Command, args []string) {
 		log.Fatal().Err(err).Msg("Failed to initialize schema")
 	}
 
+	// Create Temporal client (optional - server will still work without it)
+	var temporalClient client.Client
+
+	// Get temporal host from env if not set by flag
+	if temporalHost == "" {
+		temporalHost = os.Getenv("TEMPORAL_HOST")
+		if temporalHost == "" {
+			temporalHost = "localhost:7233"
+		}
+	}
+
+	temporalNamespace := os.Getenv("TEMPORAL_NAMESPACE")
+	if temporalNamespace == "" {
+		temporalNamespace = "default"
+	}
+
+	temporalClient, err = client.Dial(client.Options{
+		HostPort:  temporalHost,
+		Namespace: temporalNamespace,
+		Logger:    temporallog.NewTemporalLogger(log.Logger),
+	})
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to connect to Temporal - workflow endpoints will not be available")
+		temporalClient = nil
+	} else {
+		defer temporalClient.Close()
+		log.Info().Str("host", temporalHost).Str("namespace", temporalNamespace).Msg("Connected to Temporal")
+	}
+
 	// Create API handler and setup router
-	handler := httpapi.NewHandler(store)
+	handler := httpapi.NewHandler(store, temporalClient)
 	router := handler.SetupRouter()
 
 	// Override port with flag if provided

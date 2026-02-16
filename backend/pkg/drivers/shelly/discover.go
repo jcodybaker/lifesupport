@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"lifesupport/backend/pkg/api"
-	"lifesupport/backend/pkg/drivers"
 	"lifesupport/backend/pkg/storer"
 	"sync"
 	"sync/atomic"
@@ -16,8 +15,8 @@ import (
 	"github.com/jcodybaker/go-shelly"
 )
 
-func (d *Driver) DiscoverDevices(ctx context.Context, opt drivers.DiscoveryOptions, s *storer.Storer) (*drivers.DiscoveryResult, error) {
-	result := &drivers.DiscoveryResult{}
+func (d *Driver) DiscoverDevices(ctx context.Context, opt api.DiscoveryOptions, s *storer.Storer) (*api.DiscoveryResult, error) {
+	result := &api.DiscoveryResult{}
 	var resultMutex sync.Mutex
 	stopSearch := new(atomic.Bool)
 	ll := d.logCtx(ctx, "discovery")

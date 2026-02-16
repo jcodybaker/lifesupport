@@ -2,7 +2,7 @@ package workflows
 
 import (
 	"context"
-	"lifesupport/backend/pkg/drivers"
+	"lifesupport/backend/pkg/api"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -20,7 +20,7 @@ type DiscoveryWorkflowResult struct {
 	// Add any fields needed for the discovery workflow result
 }
 
-func (w *WorkflowCtx) DeviceDiscoveryWorkflow(ctx workflow.Context, params drivers.DiscoveryOptions) (*DiscoveryWorkflowResult, error) {
+func (w *WorkflowCtx) DeviceDiscoveryWorkflow(ctx workflow.Context, params api.DiscoveryOptions) (*DiscoveryWorkflowResult, error) {
 	// Get workflow logger - this is the deterministic way to log in workflows
 	logger := workflow.GetLogger(ctx)
 	info := workflow.GetInfo(ctx)
@@ -37,7 +37,7 @@ func (w *WorkflowCtx) DeviceDiscoveryWorkflow(ctx workflow.Context, params drive
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
-	var result *drivers.DiscoveryResult
+	var result *api.DiscoveryResult
 	err := workflow.ExecuteActivity(ctx, w.ShellyDiscovery, params).Get(ctx, &result)
 	if err != nil {
 		logger.Error("Device discovery activity failed", "error", err)
@@ -48,7 +48,7 @@ func (w *WorkflowCtx) DeviceDiscoveryWorkflow(ctx workflow.Context, params drive
 	return &DiscoveryWorkflowResult{}, nil
 }
 
-func (w *WorkflowCtx) ShellyDiscovery(ctx context.Context, params drivers.DiscoveryOptions) (*drivers.DiscoveryResult, error) {
+func (w *WorkflowCtx) ShellyDiscovery(ctx context.Context, params api.DiscoveryOptions) (*api.DiscoveryResult, error) {
 	// Extract activity info and create structured logger
 	info := activity.GetInfo(ctx)
 

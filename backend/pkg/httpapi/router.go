@@ -33,6 +33,11 @@ func (h *Handler) SetupRouter() *mux.Router {
 	r.HandleFunc("/api/actuators/{device_id}/{actuator_id}", h.UpdateActuator).Methods("PUT")
 	r.HandleFunc("/api/actuators/{device_id}/{actuator_id}", h.DeleteActuator).Methods("DELETE")
 
+	// Workflow endpoints
+	r.HandleFunc("/api/workflows/discovery", h.StartDiscoveryWorkflow).Methods("POST")
+	r.HandleFunc("/api/workflows/{workflowId}", h.GetWorkflowStatus).Methods("GET")
+	r.HandleFunc("/api/workflows", h.ListWorkflows).Methods("GET")
+
 	// Enable CORS
 	r.Use(CORSMiddleware)
 

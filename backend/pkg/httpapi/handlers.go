@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"go.temporal.io/sdk/client"
 
 	"lifesupport/backend/pkg/api"
 	"lifesupport/backend/pkg/storer"
@@ -12,12 +13,16 @@ import (
 
 // Handler holds the dependencies for HTTP handlers
 type Handler struct {
-	Store *storer.Storer
+	Store          *storer.Storer
+	TemporalClient client.Client
 }
 
 // NewHandler creates a new Handler instance
-func NewHandler(store *storer.Storer) *Handler {
-	return &Handler{Store: store}
+func NewHandler(store *storer.Storer, temporalClient client.Client) *Handler {
+	return &Handler{
+		Store:          store,
+		TemporalClient: temporalClient,
+	}
 }
 
 // Device handlers

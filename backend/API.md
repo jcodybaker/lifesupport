@@ -358,6 +358,83 @@ Response: `200 OK`
 
 ---
 
+## Workflows
+
+The workflow endpoints allow you to trigger and monitor asynchronous Temporal workflows.
+
+### Start Discovery Workflow
+```http
+POST /api/workflows/discovery
+Content-Type: application/json
+
+{
+  "options": {}
+}
+```
+
+Response: `201 Created`
+```json
+{
+  "workflow_id": "discovery-550e8400-e29b-41d4-a716-446655440000",
+  "run_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+}
+```
+
+### Get Workflow Status
+```http
+GET /api/workflows/{workflowId}
+```
+
+Response: `200 OK`
+```json
+{
+  "workflow_id": "discovery-550e8400-e29b-41d4-a716-446655440000",
+  "run_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+  "status": "success",
+  "start_time": "2026-02-16T10:30:00Z",
+  "close_time": "2026-02-16T10:30:15Z",
+  "result": {
+    "discovered_tags": ["sensor-123", "actuator-456"]
+  }
+}
+```
+
+Status values:
+- `pending`: Workflow has been scheduled but not started
+- `in-progress`: Workflow is currently running
+- `success`: Workflow completed successfully
+- `error`: Workflow failed or was terminated
+
+For discovery workflows, the response includes the `result` field with discovered devices when the workflow succeeds.
+
+### List Workflows
+```http
+GET /api/workflows
+```
+
+Response: `200 OK`
+```json
+[
+  {
+    "workflow_id": "discovery-550e8400-e29b-41d4-a716-446655440000",
+    "run_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "status": "success",
+    "start_time": "2026-02-16T10:30:00Z",
+    "close_time": "2026-02-16T10:30:15Z"
+  },
+  {
+    "workflow_id": "discovery-660e9500-f39c-52e5-b827-557766551111",
+    "run_id": "7cb8c921-0ebe-22e2-91c5-11d15fe541d9",
+    "status": "in-progress",
+    "start_time": "2026-02-16T11:00:00Z"
+  }
+]
+```
+
+Returns a list of recent discovery workflows.
+
+---
+
 ## Error Responses
 
 All error responses follow this format:
@@ -389,15 +466,22 @@ The API supports CORS with the following headers:
 
 ```bash
 # With default settings (localhost:5432)
-go run main.go
+go run main.go http
 
 # With custom database URL
 export DATABASE_URL="postgres://user:pass@localhost:5432/lifesupport?sslmode=disable"
-go run main.go
+go run main.go http
 
 # Custom port
-export PORT=3000
-go run main.go
+go run main.go http --port 3000
+
+# With Temporal connection (for workflow endpoints)
+export TEMPORAL_HOST="localhost:7233"
+export TEMPORAL_NAMESPACE="default"
+go run main.go http
+
+# Or use flags
+go run main.go http --port 8080 --temporal-host localhost:7233
 ```
 
-The server will automatically initialize the database schema on startup.
+The server will automatically initialize the database schema on startup. If Temporal is not available, the server will start but workflow endpoints will return 503 Service Unavailable.
