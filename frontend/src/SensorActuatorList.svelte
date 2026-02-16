@@ -10,6 +10,12 @@
   let error = null;
   let showSensors = true;
   let showActuators = true;
+  
+  // Edit state
+  let editingSensor = null;
+  let editingActuator = null;
+  let showEditSensorForm = false;
+  let showEditActuatorForm = false;
 
   onMount(async () => {
     await loadAll();
@@ -142,6 +148,147 @@
     }
     return '⚡'; // Default actuator icon
   }
+
+  // Sensor edit/delete functions
+  function startEditSensor(sensor) {
+    editingSensor = { ...sensor };
+    showEditSensorForm = true;
+  }
+
+  function cancelEditSensor() {
+    showEditSensorForm = false;
+    editingSensor = null;
+    error = null;
+  }
+
+  async function updateSensor() {
+    if (!editingSensor.name?.trim()) {
+      error = 'Sensor name is required';
+      return;
+    }
+
+    try {
+      await sensorAPI.update(editingSensor.device_id, editingSensor.id, {
+        name: editingSensor.name,
+        sensor_type: editingSensor.sensor_type,
+        unit: editingSensor.unit,
+        tags: editingSensor.tags || [],
+      });
+      await loadSensors();
+      showEditSensorForm = false;
+      editingSensor = null;
+      error = null;
+    } catch (err) {
+      error = `Failed to update sensor: ${err.message}`;
+      console.error('Error updating sensor:', err);
+    }
+  }
+
+  async function deleteSensor(deviceId, sensorId) {
+    if (!confirm('Are you sure you want to delete this sensor?')) {
+      return;
+    }
+
+    try {
+      await sensorAPI.delete(deviceId, sensorId);
+      await loadSensors();
+      error = null;
+    } catch (err) {
+      error = `Failed to delete sensor: ${err.message}`;
+      console.error('Error deleting sensor:', err);
+    }
+  }
+
+  // Actuator edit/delete functions
+  function startEditActuator(actuator) {
+    editingActuator = { ...actuator };
+    showEditActuatorForm = true;
+  }
+
+  function cancelEditActuator() {
+    showEditActuatorForm = false;
+    editingActuator = null;
+    error = null;
+  }
+
+  async function updateActuator() {
+    if (!editingActuator.name?.trim()) {
+      error = 'Actuator name is required';
+      return;
+    }
+
+    try {
+      await actuatorAPI.update(editingActuator.device_id, editingActuator.id, {
+        name: editingActuator.name,
+        actuator_type: editingActuator.actuator_type,
+        tags: editingActuator.tags || [],
+      });
+      await loadActuators();
+      showEditActuatorForm = false;
+      editingActuator = null;
+      error = null;
+    } catch (err) {
+      error = `Failed to update actuator: ${err.message}`;
+      console.error('Error updating actuator:', err);
+    }
+  }
+
+  async function deleteActuator(deviceId, actuatorId) {
+    if (!confirm('Are you sure you want to delete this actuator?')) {
+      return;
+    }
+
+    try {
+      await actuatorAPI.delete(deviceId, actuatorId);
+      await loadActuators();
+      error = null;
+    } catch (err) {
+      error = `Failed to delete actuator: ${err.message}`;
+      console.error('Error deleting actuator:', err);
+    }
+  }
+
+  // Tag management functions
+  let newSensorTag = '';
+  let newActuatorTag = '';
+
+  function addSensorTag() {
+    const tag = newSensorTag.trim();
+    if (tag && editingSensor) {
+      if (!editingSensor.tags) {
+        editingSensor.tags = [];
+      }
+      if (!editingSensor.tags.includes(tag)) {
+        editingSensor.tags = [...editingSensor.tags, tag];
+      }
+      newSensorTag = '';
+    }
+  }
+
+  function removeSensorTag(tag) {
+    if (editingSensor && editingSensor.tags) {
+      editingSensor.tags = editingSensor.tags.filter(t => t !== tag);
+    }
+  }
+
+  function addActuatorTag() {
+    const tag = newActuatorTag.trim();
+    if (tag && editingActuator) {
+      if (!editingActuator.tags) {
+        editingActuator.tags = [];
+      }
+      if (!editingActuator.tags.includes(tag)) {
+        editingActuator.tags = [...editingActuator.tags, tag];
+      }
+      newActuatorTag = '';
+    }
+  }
+
+  function removeActuatorTag(tag) {
+    if (editingActuator && editingActuator.tags) {
+      editingActuator.tags = editingActuator.tags.filter(t => t !== tag);
+    }
+  }
 </script>
 
 <div class="sensor-actuator-list">
@@ -172,6 +319,106 @@
     <div class="error-message">{error}</div>
   {/if}
 
+  {#if showEditSensorForm && editingSensor}
+    <div class="edit-form-container">
+      <h3>Edit Sensor: {editingSensor.id}</h3>
+      <form on:submit|preventDefault={updateSensor}>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="edit-sensor-name">Name *</label>
+            <input id="edit-sensor-name" bind:value={editingSensor.name} required />
+          </div>
+          <div class="form-group">
+            <label for="edit-sensor-type">Type *</label>
+            <input id="edit-sensor-type" bind:value={editingSensor.sensor_type} required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="edit-sensor-unit">Unit</label>
+          <input id="edit-sensor-unit" bind:value={editingSensor.unit} placeholder="°C, %, W, etc." />
+        </div>
+        <div class="form-group">
+          <div class="form-label">Tags</div>
+          <div class="tag-manager">
+            <div class="tag-list">
+              {#if editingSensor.tags && editingSensor.tags.length > 0}
+                {#each editingSensor.tags as tag}
+                  <span class="tag-edit">
+                    {tag}
+                    <button type="button" class="tag-remove" on:click={() => removeSensorTag(tag)}>×</button>
+                  </span>
+                {/each}
+              {:else}
+                <span class="no-tags">No tags</span>
+              {/if}
+            </div>
+            <div class="tag-input-row">
+              <input 
+                type="text" 
+                bind:value={newSensorTag} 
+                placeholder="Add tag..." 
+                on:keypress={(e) => e.key === 'Enter' && (e.preventDefault(), addSensorTag())}
+              />
+              <button type="button" class="btn-add-tag" on:click={addSensorTag}>+ Add</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+          <button type="button" class="btn btn-secondary" on:click={cancelEditSensor}>Cancel</button>
+        </div>
+      </form>
+    </div>
+  {/if}
+
+  {#if showEditActuatorForm && editingActuator}
+    <div class="edit-form-container">
+      <h3>Edit Actuator: {editingActuator.id}</h3>
+      <form on:submit|preventDefault={updateActuator}>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="edit-actuator-name">Name *</label>
+            <input id="edit-actuator-name" bind:value={editingActuator.name} required />
+          </div>
+          <div class="form-group">
+            <label for="edit-actuator-type">Type *</label>
+            <input id="edit-actuator-type" bind:value={editingActuator.actuator_type} required />
+          </div>
+        </div>
+        <div class="form-group">
+          <div class="form-label">Tags</div>
+          <div class="tag-manager">
+            <div class="tag-list">
+              {#if editingActuator.tags && editingActuator.tags.length > 0}
+                {#each editingActuator.tags as tag}
+                  <span class="tag-edit">
+                    {tag}
+                    <button type="button" class="tag-remove" on:click={() => removeActuatorTag(tag)}>×</button>
+                  </span>
+                {/each}
+              {:else}
+                <span class="no-tags">No tags</span>
+              {/if}
+            </div>
+            <div class="tag-input-row">
+              <input 
+                type="text" 
+                bind:value={newActuatorTag} 
+                placeholder="Add tag..." 
+                on:keypress={(e) => e.key === 'Enter' && (e.preventDefault(), addActuatorTag())}
+              />
+              <button type="button" class="btn-add-tag" on:click={addActuatorTag}>+ Add</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+          <button type="button" class="btn btn-secondary" on:click={cancelEditActuator}>Cancel</button>
+        </div>
+      </form>
+    </div>
+  {/if}
+
   <div class="items-grid">
     {#if loading && sensors.length === 0 && actuators.length === 0}
       <div class="loading">Loading...</div>
@@ -186,6 +433,10 @@
               <div class="title-section">
                 <h3 class="item-name">{sensor.name}</h3>
                 <span class="item-type">{getSensorTypeDisplay(sensor.sensor_type)}</span>
+              </div>
+              <div class="card-actions">
+                <button class="btn-icon" on:click={() => startEditSensor(sensor)} title="Edit">✏️</button>
+                <button class="btn-icon" on:click={() => deleteSensor(sensor.device_id, sensor.id)} title="Delete">🗑️</button>
               </div>
             </div>
             <div class="card-body">
@@ -229,6 +480,10 @@
               <div class="title-section">
                 <h3 class="item-name">{actuator.name}</h3>
                 <span class="item-type">{getActuatorTypeDisplay(actuator.actuator_type)}</span>
+              </div>
+              <div class="card-actions">
+                <button class="btn-icon" on:click={() => startEditActuator(actuator)} title="Edit">✏️</button>
+                <button class="btn-icon" on:click={() => deleteActuator(actuator.device_id, actuator.id)} title="Delete">🗑️</button>
               </div>
             </div>
             <div class="card-body">
@@ -525,6 +780,193 @@
     border: 1px solid rgba(32, 178, 170, 0.3);
   }
 
+  .tag-manager {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    min-height: 2rem;
+    align-items: center;
+  }
+
+  .tag-edit {
+    background: rgba(32, 178, 170, 0.2);
+    color: #20B2AA;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    border: 1px solid rgba(32, 178, 170, 0.3);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .tag-remove {
+    background: transparent;
+    border: none;
+    color: #20B2AA;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+  }
+
+  .tag-remove:hover {
+    opacity: 1;
+  }
+
+  .no-tags {
+    color: #8BA3B8;
+    font-style: italic;
+    font-size: 0.85rem;
+  }
+
+  .tag-input-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .tag-input-row input {
+    flex: 1;
+  }
+
+  .btn-add-tag {
+    padding: 0.5rem 1rem;
+    background: rgba(32, 178, 170, 0.2);
+    border: 1px solid #20B2AA;
+    color: #20B2AA;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .btn-add-tag:hover {
+    background: rgba(32, 178, 170, 0.3);
+  }
+
+  .card-actions {
+    display: flex;
+    gap: 0.25rem;
+    margin-left: auto;
+  }
+
+  .btn-icon {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    opacity: 0.7;
+    transition: all 0.2s;
+    line-height: 1;
+  }
+
+  .btn-icon:hover {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+
+  .edit-form-container {
+    background: linear-gradient(135deg, #1a2332 0%, #0d1520 100%);
+    border: 2px solid #20B2AA;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .edit-form-container h3 {
+    margin: 0 0 1rem 0;
+    color: #20B2AA;
+    font-size: 1.2rem;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .form-group label {
+    display: block;
+    color: #20B2AA;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  .form-label {
+    display: block;
+    color: #20B2AA;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  .form-group input {
+    width: 100%;
+    padding: 0.5rem;
+    background: rgba(32, 178, 170, 0.05);
+    border: 2px solid rgba(32, 178, 170, 0.3);
+    border-radius: 4px;
+    color: #D4E4F7;
+    font-size: 0.9rem;
+  }
+
+  .form-group input:focus {
+    outline: none;
+    border-color: #20B2AA;
+  }
+
+  .form-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .btn {
+    padding: 0.5rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background: #20B2AA;
+    color: #0A1929;
+  }
+
+  .btn-primary:hover {
+    background: #1a9b94;
+  }
+
+  .btn-secondary {
+    background: transparent;
+    border: 2px solid #20B2AA;
+    color: #20B2AA;
+  }
+
+  .btn-secondary:hover {
+    background: rgba(32, 178, 170, 0.1);
+  }
+
   @media (max-width: 768px) {
     .items-grid {
       grid-template-columns: 1fr;
@@ -538,6 +980,10 @@
     .filter-buttons {
       width: 100%;
       justify-content: space-between;
+    }
+
+    .form-row {
+      grid-template-columns: 1fr;
     }
   }
 </style>
