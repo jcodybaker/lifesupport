@@ -1,8 +1,8 @@
 <script>
-  import DeviceManager from './DeviceManager.svelte';
+  import SensorActuatorList from './SensorActuatorList.svelte';
   import WorkflowManager from './WorkflowManager.svelte';
 
-  let activeTab = 'devices';
+  let activeTab = 'sensors';
 
   function setActiveTab(tab) {
     activeTab = tab;
@@ -13,30 +13,30 @@
   <header class="app-header">
     <div>
       <h1>LIFE SUPPORT</h1>
-      <p class="subtitle">Device & Workflow Control</p>
+      <p class="subtitle">Sensor & Actuator Control</p>
     </div>
   </header>
 
   <nav class="tabs">
     <button 
       class="tab" 
-      class:active={activeTab === 'devices'}
-      on:click={() => setActiveTab('devices')}
+      class:active={activeTab === 'sensors'}
+      on:click={() => setActiveTab('sensors')}
     >
-      DEVICES
+      📊⚡ SENSORS & ACTUATORS
     </button>
     <button 
       class="tab" 
       class:active={activeTab === 'workflows'}
       on:click={() => setActiveTab('workflows')}
     >
-      DISCOVERY
+      🔍 DISCOVERY
     </button>
   </nav>
 
   <div class="tab-content">
-    {#if activeTab === 'devices'}
-      <DeviceManager />
+    {#if activeTab === 'sensors'}
+      <SensorActuatorList />
     {:else if activeTab === 'workflows'}
       <WorkflowManager />
     {/if}

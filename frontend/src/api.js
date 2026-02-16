@@ -22,7 +22,9 @@ async function request(url, options = {}) {
     return null;
   }
 
-  return response.json();
+  const data = await response.json();
+  // Handle null responses from Go (nil slices encode as null)
+  return data;
 }
 
 // Device API
@@ -57,8 +59,44 @@ export const deviceAPI = {
   },
 };
 
-// Sensor Reading API
+// Sensor API
 export const sensorAPI = {
+  async list(params = {}) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, value);
+      }
+    });
+    const query = queryParams.toString();
+    return request(`/sensors${query ? '?' + query : ''}`);
+  },
+
+  async get(deviceId, sensorId) {
+    return request(`/sensors/${deviceId}/${sensorId}`);
+  },
+
+  async create(sensor) {
+    return request('/sensors', {
+      method: 'POST',
+      body: JSON.stringify(sensor),
+    });
+  },
+
+  async update(deviceId, sensorId, sensor) {
+    return request(`/sensors/${deviceId}/${sensorId}`, {
+      method: 'PUT',
+      body: JSON.stringify(sensor),
+    });
+  },
+
+  async delete(deviceId, sensorId) {
+    return request(`/sensors/${deviceId}/${sensorId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Sensor Reading API
   async getReadings(params = {}) {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -71,10 +109,18 @@ export const sensorAPI = {
   },
 
   async getLatest(sensorId) {
-    return request(`/sensor-readings/${sensorId}/latest`);
+    try {
+      return await request(`/sensor-readings/${sensorId}/latest`);
+    } catch (err) {
+      // Return null if no readings exist (404)
+      if (err.message?.includes('404')) {
+        return null;
+      }
+      throw err;
+    }
   },
 
-  async create(reading) {
+  async createReading(reading) {
     return request('/sensor-readings', {
       method: 'POST',
       body: JSON.stringify(reading),
@@ -82,8 +128,44 @@ export const sensorAPI = {
   },
 };
 
-// Actuator State API
+// Actuator API
 export const actuatorAPI = {
+  async list(params = {}) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, value);
+      }
+    });
+    const query = queryParams.toString();
+    return request(`/actuators${query ? '?' + query : ''}`);
+  },
+
+  async get(deviceId, actuatorId) {
+    return request(`/actuators/${deviceId}/${actuatorId}`);
+  },
+
+  async create(actuator) {
+    return request('/actuators', {
+      method: 'POST',
+      body: JSON.stringify(actuator),
+    });
+  },
+
+  async update(deviceId, actuatorId, actuator) {
+    return request(`/actuators/${deviceId}/${actuatorId}`, {
+      method: 'PUT',
+      body: JSON.stringify(actuator),
+    });
+  },
+
+  async delete(deviceId, actuatorId) {
+    return request(`/actuators/${deviceId}/${actuatorId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Actuator State API
   async getStates(params = {}) {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -96,10 +178,18 @@ export const actuatorAPI = {
   },
 
   async getLatest(actuatorId) {
-    return request(`/actuator-states/${actuatorId}/latest`);
+    try {
+      return await request(`/actuator-states/${actuatorId}/latest`);
+    } catch (err) {
+      // Return null if no states exist (404)
+      if (err.message?.includes('404')) {
+        return null;
+      }
+      throw err;
+    }
   },
 
-  async create(state) {
+  async createState(state) {
     return request('/actuator-states', {
       method: 'POST',
       body: JSON.stringify(state),
