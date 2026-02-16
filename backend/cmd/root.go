@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var (
@@ -35,6 +36,9 @@ func Execute() {
 }
 
 func init() {
+	// Configure Viper for automatic environment variable binding
+	viper.AutomaticEnv()
+
 	// Global flags for logging configuration
 	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "pretty", "Log output format (json or pretty)")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")

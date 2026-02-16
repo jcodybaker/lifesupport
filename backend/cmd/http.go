@@ -5,16 +5,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"lifesupport/backend/pkg/httpapi"
-	"lifesupport/backend/pkg/storer"
-	"lifesupport/backend/pkg/temporallog"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	"go.temporal.io/sdk/client"
+	"github.com/spf13/viper"
 )
 
 var httpCmd = &cobra.Command{
@@ -25,75 +24,52 @@ var httpCmd = &cobra.Command{
 }
 
 var (
-	httpPort     string
-	temporalHost string
+	httpPort      string
+	httpOptions   CommonOptions
 )
 
 func init() {
 	rootCmd.AddCommand(httpCmd)
+
+	// Configure Viper for automatic environment variable binding
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+
+	// HTTP-specific flags
 	httpCmd.Flags().StringVarP(&httpPort, "port", "p", "8080", "Port to run the HTTP server on")
-	httpCmd.Flags().StringVar(&temporalHost, "temporal-host", "localhost:7233", "Temporal server host:port")
+	viper.BindPFlag("port", httpCmd.Flags().Lookup("port"))
+
+	// Add common database and temporal flags
+	AddCommonFlags(httpCmd, &httpOptions)
 }
 
 func runHTTPServer(cmd *cobra.Command, args []string) {
-	var err error
-	connStr := os.Getenv("DATABASE_URL")
-	if connStr == "" {
-		connStr = "host=localhost port=5432 user=postgres password=postgres dbname=lifesupport sslmode=disable"
-	}
+	ctx := context.Background()
 
-	store, err := storer.New(connStr)
+	// Load configuration from flags and environment variables
+	LoadCommonOptions(&httpOptions)
+	httpPort = viper.GetString("port")
+
+	// Initialize database
+	store, err := InitDatabase(ctx, httpOptions.DB)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to database")
 	}
 	defer store.Close()
-
-	// Initialize database schema
-	ctx := context.Background()
-	if err := store.InitSchema(ctx); err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize schema")
-	}
+	log.Info().Str("db", httpOptions.DB).Msg("Connected to database")
 
 	// Create Temporal client (optional - server will still work without it)
-	var temporalClient client.Client
-
-	// Get temporal host from env if not set by flag
-	if temporalHost == "" {
-		temporalHost = os.Getenv("TEMPORAL_HOST")
-		if temporalHost == "" {
-			temporalHost = "localhost:7233"
-		}
-	}
-
-	temporalNamespace := os.Getenv("TEMPORAL_NAMESPACE")
-	if temporalNamespace == "" {
-		temporalNamespace = "default"
-	}
-
-	temporalClient, err = client.Dial(client.Options{
-		HostPort:  temporalHost,
-		Namespace: temporalNamespace,
-		Logger:    temporallog.NewTemporalLogger(log.Logger),
-	})
+	temporalClient, err := InitTemporalClient(ctx, httpOptions.Temporal)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to connect to Temporal - workflow endpoints will not be available")
 		temporalClient = nil
-	} else {
+	}
+	if temporalClient != nil {
 		defer temporalClient.Close()
-		log.Info().Str("host", temporalHost).Str("namespace", temporalNamespace).Msg("Connected to Temporal")
 	}
 
 	// Create API handler and setup router
 	handler := httpapi.NewHandler(store, temporalClient)
 	router := handler.SetupRouter()
-
-	// Override port with flag if provided
-	if httpPort == "" {
-		httpPort = os.Getenv("PORT")
-		if httpPort == "" {
-			httpPort = "8080"
-		}
-	}
 
 	server := &http.Server{
 		Addr:    ":" + httpPort,

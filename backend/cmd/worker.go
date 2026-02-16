@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"lifesupport/backend/pkg/drivers/shelly"
-	"lifesupport/backend/pkg/storer"
-	"lifesupport/backend/pkg/temporallog"
 	"lifesupport/backend/pkg/workflows"
 
 	temporalWorker "go.temporal.io/sdk/worker"
@@ -22,7 +20,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.temporal.io/sdk/client"
 )
 
 var workerCmd = &cobra.Command{
@@ -33,19 +30,10 @@ var workerCmd = &cobra.Command{
 }
 
 var (
-	dbConnString    string
-	temporalOptions TemporalOptions
-	mqttOptions     MQTTOptions
-	workerOptions   WorkerOptions
+	workerOptions WorkerOptions
+	commonOptions CommonOptions
+	mqttOptions   MQTTOptions
 )
-
-type TemporalOptions struct {
-	Host              string
-	Namespace         string
-	TaskQueue         string
-	Identity          string
-	ConnectionTimeout time.Duration
-}
 
 type MQTTOptions struct {
 	Broker                string
@@ -71,24 +59,14 @@ func init() {
 	rootCmd.AddCommand(workerCmd)
 
 	// Configure Viper for automatic environment variable binding
-	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 
-	// Database flags
-	workerCmd.Flags().StringVar(&dbConnString, "db", "postgres://lifesupport:lifesupport@localhost:5432/lifesupport?sslmode=disable", "Database connection string")
-	viper.BindPFlag("db", workerCmd.Flags().Lookup("db"))
+	// Add common database and temporal flags
+	AddCommonFlags(workerCmd, &commonOptions)
 
-	// Temporal flags
-	workerCmd.Flags().StringVar(&temporalOptions.Host, "temporal-host", "localhost:7233", "Temporal server host:port")
-	workerCmd.Flags().StringVar(&temporalOptions.Namespace, "temporal-namespace", "default", "Temporal namespace")
-	workerCmd.Flags().StringVar(&temporalOptions.TaskQueue, "task-queue", "lifesupport-tasks", "Task queue name")
-	workerCmd.Flags().StringVar(&temporalOptions.Identity, "temporal-identity", "", "Temporal worker identity (defaults to hostname)")
-	workerCmd.Flags().DurationVar(&temporalOptions.ConnectionTimeout, "temporal-timeout", 10*time.Second, "Temporal connection timeout")
-	viper.BindPFlag("temporal-host", workerCmd.Flags().Lookup("temporal-host"))
-	viper.BindPFlag("temporal-namespace", workerCmd.Flags().Lookup("temporal-namespace"))
+	// Worker-specific temporal flags
+	workerCmd.Flags().StringVar(&commonOptions.Temporal.TaskQueue, "task-queue", "lifesupport-tasks", "Task queue name")
 	viper.BindPFlag("task-queue", workerCmd.Flags().Lookup("task-queue"))
-	viper.BindPFlag("temporal-identity", workerCmd.Flags().Lookup("temporal-identity"))
-	viper.BindPFlag("temporal-timeout", workerCmd.Flags().Lookup("temporal-timeout"))
 
 	// MQTT flags
 	workerCmd.Flags().StringVar(&mqttOptions.Broker, "mqtt-broker", "tcp://localhost:1883", "MQTT broker URL")
@@ -158,13 +136,9 @@ func runWorker(cmd *cobra.Command, args []string) {
 	ctx = log.Logger.WithContext(ctx)
 	var wg sync.WaitGroup
 
-	// Get values from Viper (which handles env vars automatically)
-	dbConnString = viper.GetString("db")
-	temporalOptions.Host = viper.GetString("temporal-host")
-	temporalOptions.Namespace = viper.GetString("temporal-namespace")
-	temporalOptions.TaskQueue = viper.GetString("task-queue")
-	temporalOptions.Identity = viper.GetString("temporal-identity")
-	temporalOptions.ConnectionTimeout = viper.GetDuration("temporal-timeout")
+	// Load configuration from flags and environment variables
+	LoadCommonOptions(&commonOptions)
+	commonOptions.Temporal.TaskQueue = viper.GetString("task-queue")
 	mqttOptions.Broker = viper.GetString("mqtt-broker")
 	mqttOptions.ClientID = viper.GetString("mqtt-client-id")
 	mqttOptions.Username = viper.GetString("mqtt-username")
@@ -180,33 +154,16 @@ func runWorker(cmd *cobra.Command, args []string) {
 	workerOptions.MaxConcurrentActivityExecutionSize = viper.GetInt("max-concurrent-activities")
 	workerOptions.MaxConcurrentWorkflowTaskExecutionSize = viper.GetInt("max-concurrent-workflows")
 
-	// Set default identity to hostname if not specified
-	if temporalOptions.Identity == "" {
-		hostname, err := os.Hostname()
-		if err != nil {
-			temporalOptions.Identity = "lifesupport-worker"
-		} else {
-			temporalOptions.Identity = hostname
-		}
-	}
-
-	// Create storer
-	store, err := storer.New(dbConnString)
+	// Initialize database
+	store, err := InitDatabase(ctx, commonOptions.DB)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Unable to create storer")
 	}
 	defer store.Close()
-	if err := store.InitSchema(ctx); err != nil {
-		log.Fatal().Err(err).Msg("Unable to initialize database schema")
-	}
+	log.Info().Str("db", commonOptions.DB).Msg("Connected to database")
 
 	// Create Temporal client
-	c, err := client.DialContext(ctx, client.Options{
-		HostPort:  temporalOptions.Host,
-		Namespace: temporalOptions.Namespace,
-		Identity:  temporalOptions.Identity,
-		Logger:    temporallog.NewTemporalLogger(log.Logger),
-	})
+	c, err := InitTemporalClient(ctx, commonOptions.Temporal)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Unable to create Temporal client")
 	}
@@ -251,21 +208,21 @@ func runWorker(cmd *cobra.Command, args []string) {
 	workflowCtx := workflows.New(log.Logger, store, shellyDriver)
 
 	// Create worker
-	w := temporalWorker.New(c, temporalOptions.TaskQueue, temporalWorker.Options{
+	w := temporalWorker.New(c, commonOptions.Temporal.TaskQueue, temporalWorker.Options{
 		MaxConcurrentActivityExecutionSize:     workerOptions.MaxConcurrentActivityExecutionSize,
 		MaxConcurrentWorkflowTaskExecutionSize: workerOptions.MaxConcurrentWorkflowTaskExecutionSize,
-		Identity:                               temporalOptions.Identity,
+		Identity:                               commonOptions.Temporal.Identity,
 	})
 
 	workflowCtx.Register(w)
 
 	log.Info().
-		Str("task_queue", temporalOptions.TaskQueue).
-		Str("namespace", temporalOptions.Namespace).
-		Str("identity", temporalOptions.Identity).
+		Str("task_queue", commonOptions.Temporal.TaskQueue).
+		Str("namespace", commonOptions.Temporal.Namespace).
+		Str("identity", commonOptions.Temporal.Identity).
 		Msg("Starting Temporal worker")
 	log.Info().
-		Str("temporal_host", temporalOptions.Host).
+		Str("temporal_host", commonOptions.Temporal.Host).
 		Str("mqtt_broker", mqttOptions.Broker).
 		Str("mqtt_client_id", mqttOptions.ClientID).
 		Msg("Connected to services")
