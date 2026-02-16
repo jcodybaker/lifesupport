@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"lifesupport/backend/pkg/api"
+	"lifesupport/backend/pkg/httpapi"
 	"lifesupport/backend/pkg/storer"
 
 	"github.com/spf13/cobra"
@@ -51,7 +51,7 @@ func runHTTPServer(cmd *cobra.Command, args []string) {
 	}
 
 	// Create API handler and setup router
-	handler := api.NewHandler(store)
+	handler := httpapi.NewHandler(store)
 	router := handler.SetupRouter()
 
 	// Override port with flag if provided

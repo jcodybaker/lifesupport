@@ -33,14 +33,21 @@ lifesupport/
 
 ## Quick Start
 
-### 1. Start the Database
+### 1. Start Services
 
-Using Docker:
+Using Docker Compose (starts PostgreSQL, Temporal, Elasticsearch, and Temporal Web UI):
 ```bash
 docker-compose up -d
 ```
 
-Or use your own PostgreSQL instance and update the connection string in `backend/.env`.
+This starts:
+- **PostgreSQL** (port 5432) - Application database
+- **Temporal PostgreSQL** (port 5433) - Temporal metadata storage
+- **Elasticsearch** (port 9200) - Temporal visibility
+- **Temporal Server** (port 7233) - Workflow engine
+- **Temporal Web UI** (port 8088) - Workflow debugging interface at http://localhost:8088
+
+Or use your own PostgreSQL and Temporal instances and update connection strings accordingly.
 
 ### 2. Start the Backend
 
@@ -61,9 +68,13 @@ make run-http
 ./lifesupport-backend http --port 3000
 ```
 
+The API will be available at `http://localhost:8080`
+
 **Temporal Worker:**
 ```bash
 cd backend
+
+# Make sure docker-compose is running first (Temporal needs to be available)
 
 # Using Make
 make run-worker
@@ -78,8 +89,6 @@ make run-worker
 ```
 
 For more details on the Temporal worker, see [backend/TEMPORAL.md](backend/TEMPORAL.md).
-
-The API will be available at `http://localhost:8080`
 
 ### 3. Start the Frontend
 

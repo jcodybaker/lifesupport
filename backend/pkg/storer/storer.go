@@ -4,11 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"lifesupport/backend/pkg/api"
-	"time"
 
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
+)
+
+// Exported errors
+var (
+	ErrNotFound      = errors.New("not found")
+	ErrAlreadyExists = errors.New("already exists")
 )
 
 // Storer provides database operations for device data
@@ -38,78 +45,113 @@ func (s *Storer) Close() error {
 // InitSchema creates the necessary database tables
 func (s *Storer) InitSchema(ctx context.Context) error {
 	schema := `
-	CREATE TABLE IF NOT EXISTS systems (
-		id VARCHAR(255) PRIMARY KEY,
-		name VARCHAR(255) NOT NULL,
-		description TEXT,
-		created_at TIMESTAMP NOT NULL,
-		updated_at TIMESTAMP NOT NULL
-	);
-
-	CREATE TABLE IF NOT EXISTS subsystems (
-		id VARCHAR(255) PRIMARY KEY,
-		name VARCHAR(255) NOT NULL,
-		description TEXT,
-		type VARCHAR(50) NOT NULL,
-		parent_id VARCHAR(255) REFERENCES subsystems(id) ON DELETE CASCADE,
-		system_id VARCHAR(255) REFERENCES systems(id) ON DELETE CASCADE,
-		metadata JSONB,
-		created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-		updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_subsystems_parent_id ON subsystems(parent_id);
-	CREATE INDEX IF NOT EXISTS idx_subsystems_system_id ON subsystems(system_id);
-
 	CREATE TABLE IF NOT EXISTS devices (
 		id VARCHAR(255) PRIMARY KEY,
 		driver VARCHAR(50) NOT NULL,
 		name VARCHAR(255) NOT NULL,
 		description TEXT,
-		subsystem_id VARCHAR(255) REFERENCES subsystems(id) ON DELETE CASCADE,
 		metadata JSONB,
+		tags TEXT[],
 		created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 		updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_devices_subsystem_id ON devices(subsystem_id);
+	CREATE INDEX IF NOT EXISTS idx_devices_tags ON devices USING GIN(tags);
 
-	CREATE TABLE IF NOT EXISTS sensor_readings (
-		id SERIAL PRIMARY KEY,
+	CREATE TABLE IF NOT EXISTS sensors (
+		id VARCHAR(255) NOT NULL,
 		device_id VARCHAR(255) NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-		sensor_id VARCHAR(255) NOT NULL,
-		sensor_name VARCHAR(255) NOT NULL,
+		name VARCHAR(255) NOT NULL,
 		sensor_type VARCHAR(50) NOT NULL,
-		value DOUBLE PRECISION NOT NULL,
-		unit VARCHAR(20) NOT NULL,
-		valid BOOLEAN NOT NULL DEFAULT true,
-		error TEXT,
-		timestamp TIMESTAMP NOT NULL,
-		created_at TIMESTAMP NOT NULL DEFAULT NOW()
+		metadata JSONB,
+		tags TEXT[],
+		created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+		updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+		PRIMARY KEY (device_id, id)
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_sensor_readings_device_id ON sensor_readings(device_id);
-	CREATE INDEX IF NOT EXISTS idx_sensor_readings_sensor_id ON sensor_readings(sensor_id);
-	CREATE INDEX IF NOT EXISTS idx_sensor_readings_timestamp ON sensor_readings(timestamp DESC);
-	CREATE INDEX IF NOT EXISTS idx_sensor_readings_type ON sensor_readings(sensor_type);
+	CREATE INDEX IF NOT EXISTS idx_sensors_device_id ON sensors(device_id);
+	CREATE INDEX IF NOT EXISTS idx_sensors_tags ON sensors USING GIN(tags);
+	CREATE INDEX IF NOT EXISTS idx_sensors_type ON sensors(sensor_type);
 
-	CREATE TABLE IF NOT EXISTS actuator_states (
-		id SERIAL PRIMARY KEY,
+	CREATE TABLE IF NOT EXISTS actuators (
+		id VARCHAR(255) NOT NULL,
 		device_id VARCHAR(255) NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-		actuator_id VARCHAR(255) NOT NULL,
-		actuator_name VARCHAR(255) NOT NULL,
+		name VARCHAR(255) NOT NULL,
 		actuator_type VARCHAR(50) NOT NULL,
-		active BOOLEAN NOT NULL,
-		parameters JSONB,
-		error TEXT,
-		timestamp TIMESTAMP NOT NULL,
-		created_at TIMESTAMP NOT NULL DEFAULT NOW()
+		metadata JSONB,
+		tags TEXT[],
+		created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+		updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+		PRIMARY KEY (device_id, id)
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_actuator_states_device_id ON actuator_states(device_id);
-	CREATE INDEX IF NOT EXISTS idx_actuator_states_actuator_id ON actuator_states(actuator_id);
-	CREATE INDEX IF NOT EXISTS idx_actuator_states_timestamp ON actuator_states(timestamp DESC);
-	CREATE INDEX IF NOT EXISTS idx_actuator_states_type ON actuator_states(actuator_type);
+	CREATE INDEX IF NOT EXISTS idx_actuators_device_id ON actuators(device_id);
+	CREATE INDEX IF NOT EXISTS idx_actuators_tags ON actuators USING GIN(tags);
+	CREATE INDEX IF NOT EXISTS idx_actuators_type ON actuators(actuator_type);
+	`
+
+	// Create trigger functions to enforce tag uniqueness
+	triggerFunctions := `
+	-- Function to check unique tags for devices
+	CREATE OR REPLACE FUNCTION check_device_tags_unique()
+	RETURNS TRIGGER AS $$
+	BEGIN
+		IF EXISTS (
+			SELECT 1 FROM devices 
+			WHERE id != NEW.id 
+			AND tags && NEW.tags
+		) THEN
+			RAISE EXCEPTION 'Tag already exists in another device';
+		END IF;
+		RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+
+	DROP TRIGGER IF EXISTS device_tags_unique_trigger ON devices;
+	CREATE TRIGGER device_tags_unique_trigger
+		BEFORE INSERT OR UPDATE ON devices
+		FOR EACH ROW EXECUTE FUNCTION check_device_tags_unique();
+
+	-- Function to check unique tags for sensors
+	CREATE OR REPLACE FUNCTION check_sensor_tags_unique()
+	RETURNS TRIGGER AS $$
+	BEGIN
+		IF EXISTS (
+			SELECT 1 FROM sensors 
+			WHERE (device_id != NEW.device_id OR id != NEW.id)
+			AND tags && NEW.tags
+		) THEN
+			RAISE EXCEPTION 'Tag already exists in another sensor';
+		END IF;
+		RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+
+	DROP TRIGGER IF EXISTS sensor_tags_unique_trigger ON sensors;
+	CREATE TRIGGER sensor_tags_unique_trigger
+		BEFORE INSERT OR UPDATE ON sensors
+		FOR EACH ROW EXECUTE FUNCTION check_sensor_tags_unique();
+
+	-- Function to check unique tags for actuators
+	CREATE OR REPLACE FUNCTION check_actuator_tags_unique()
+	RETURNS TRIGGER AS $$
+	BEGIN
+		IF EXISTS (
+			SELECT 1 FROM actuators 
+			WHERE (device_id != NEW.device_id OR id != NEW.id)
+			AND tags && NEW.tags
+		) THEN
+			RAISE EXCEPTION 'Tag already exists in another actuator';
+		END IF;
+		RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+
+	DROP TRIGGER IF EXISTS actuator_tags_unique_trigger ON actuators;
+	CREATE TRIGGER actuator_tags_unique_trigger
+		BEFORE INSERT OR UPDATE ON actuators
+		FOR EACH ROW EXECUTE FUNCTION check_actuator_tags_unique();
 	`
 
 	_, err := s.db.ExecContext(ctx, schema)
@@ -117,457 +159,164 @@ func (s *Storer) InitSchema(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
-	return nil
-}
-
-// System operations
-
-// CreateSystem creates a new system in the database
-func (s *Storer) CreateSystem(ctx context.Context, sys *api.System) error {
-	query := `
-		INSERT INTO systems (id, name, description, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`
-	_, err := s.db.ExecContext(ctx, query, sys.ID, sys.Name, sys.Description, sys.CreatedAt, sys.UpdatedAt)
+	_, err = s.db.ExecContext(ctx, triggerFunctions)
 	if err != nil {
-		return fmt.Errorf("failed to create system: %w", err)
-	}
-
-	// Create subsystems recursively
-	for _, subsystem := range sys.Subsystems {
-		if err := s.createSubsystem(ctx, subsystem, sys.ID, nil); err != nil {
-			return err
-		}
+		return fmt.Errorf("failed to create trigger functions: %w", err)
 	}
 
 	return nil
-}
-
-// GetSystem retrieves a system by ID with all its subsystems and devices
-func (s *Storer) GetSystem(ctx context.Context, id string) (*api.System, error) {
-	query := `SELECT id, name, description, created_at, updated_at FROM systems WHERE id = $1`
-
-	var sys api.System
-	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&sys.ID, &sys.Name, &sys.Description, &sys.CreatedAt, &sys.UpdatedAt,
-	)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("system not found: %s", id)
-		}
-		return nil, fmt.Errorf("failed to get system: %w", err)
-	}
-
-	// Load subsystems
-	subsystems, err := s.getSubsystemsBySystemID(ctx, sys.ID)
-	if err != nil {
-		return nil, err
-	}
-	sys.Subsystems = subsystems
-
-	return &sys, nil
-}
-
-// UpdateSystem updates an existing system
-func (s *Storer) UpdateSystem(ctx context.Context, sys *api.System) error {
-	query := `
-		UPDATE systems 
-		SET name = $2, description = $3, updated_at = $4
-		WHERE id = $1
-	`
-	sys.UpdatedAt = time.Now()
-	result, err := s.db.ExecContext(ctx, query, sys.ID, sys.Name, sys.Description, sys.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("failed to update system: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rows == 0 {
-		return fmt.Errorf("system not found: %s", sys.ID)
-	}
-
-	return nil
-}
-
-// DeleteSystem deletes a system and all its children (cascading)
-func (s *Storer) DeleteSystem(ctx context.Context, id string) error {
-	query := `DELETE FROM systems WHERE id = $1`
-	result, err := s.db.ExecContext(ctx, query, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete system: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rows == 0 {
-		return fmt.Errorf("system not found: %s", id)
-	}
-
-	return nil
-}
-
-// ListSystems retrieves all systems with their subsystems and devices
-func (s *Storer) ListSystems(ctx context.Context) ([]*api.System, error) {
-	query := `SELECT id, name, description, created_at, updated_at FROM systems ORDER BY name`
-
-	rows, err := s.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query systems: %w", err)
-	}
-	defer rows.Close()
-
-	var systems []*api.System
-	for rows.Next() {
-		var sys api.System
-		err := rows.Scan(
-			&sys.ID, &sys.Name, &sys.Description, &sys.CreatedAt, &sys.UpdatedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan system: %w", err)
-		}
-
-		// Load subsystems
-		subsystems, err := s.getSubsystemsBySystemID(ctx, sys.ID)
-		if err != nil {
-			return nil, err
-		}
-		sys.Subsystems = subsystems
-
-		systems = append(systems, &sys)
-	}
-
-	return systems, rows.Err()
-}
-
-// Subsystem operations
-
-func (s *Storer) createSubsystem(ctx context.Context, sub *api.Subsystem, systemID string, parentID *string) error {
-	metadata, err := json.Marshal(sub.Metadata)
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
-	}
-
-	query := `
-		INSERT INTO subsystems (id, name, description, type, parent_id, system_id, metadata, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-	`
-	_, err = s.db.ExecContext(ctx, query, sub.ID, sub.Name, sub.Description, sub.Type, parentID, systemID, metadata)
-	if err != nil {
-		return fmt.Errorf("failed to create subsystem: %w", err)
-	}
-
-	// Create child subsystems
-	for _, child := range sub.Subsystems {
-		childParentID := sub.ID
-		if err := s.createSubsystem(ctx, child, systemID, &childParentID); err != nil {
-			return err
-		}
-	}
-
-	// Create devices
-	for _, dev := range sub.Devices {
-		if err := s.createDevice(ctx, dev, sub.ID); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// CreateSubsystem creates a new subsystem
-func (s *Storer) CreateSubsystem(ctx context.Context, sub *api.Subsystem, systemID string) error {
-	return s.createSubsystem(ctx, sub, systemID, nil)
-}
-
-// GetSubsystem retrieves a subsystem by ID with all its devices and children
-func (s *Storer) GetSubsystem(ctx context.Context, id string) (*api.Subsystem, error) {
-	query := `
-		SELECT id, name, description, type, parent_id, metadata
-		FROM subsystems 
-		WHERE id = $1
-	`
-
-	var sub api.Subsystem
-	var parentID sql.NullString
-	var metadataJSON []byte
-
-	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&sub.ID, &sub.Name, &sub.Description, &sub.Type, &parentID, &metadataJSON,
-	)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("subsystem not found: %s", id)
-		}
-		return nil, fmt.Errorf("failed to get subsystem: %w", err)
-	}
-
-	if len(metadataJSON) > 0 {
-		if err := json.Unmarshal(metadataJSON, &sub.Metadata); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
-		}
-	}
-
-	// Load devices
-	devices, err := s.getDevicesBySubsystemID(ctx, sub.ID)
-	if err != nil {
-		return nil, err
-	}
-	sub.Devices = devices
-
-	// Load child subsystems
-	children, err := s.getChildSubsystems(ctx, sub.ID)
-	if err != nil {
-		return nil, err
-	}
-	sub.Subsystems = children
-
-	return &sub, nil
-}
-
-func (s *Storer) getSubsystemsBySystemID(ctx context.Context, systemID string) ([]*api.Subsystem, error) {
-	query := `
-		SELECT id, name, description, type, parent_id, metadata
-		FROM subsystems 
-		WHERE system_id = $1 AND parent_id IS NULL
-	`
-
-	rows, err := s.db.QueryContext(ctx, query, systemID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query subsystems: %w", err)
-	}
-	defer rows.Close()
-
-	var subsystems []*api.Subsystem
-	for rows.Next() {
-		var sub api.Subsystem
-		var parentID sql.NullString
-		var metadataJSON []byte
-
-		err := rows.Scan(&sub.ID, &sub.Name, &sub.Description, &sub.Type, &parentID, &metadataJSON)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan subsystem: %w", err)
-		}
-
-		if len(metadataJSON) > 0 {
-			if err := json.Unmarshal(metadataJSON, &sub.Metadata); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
-			}
-		}
-
-		// Load devices
-		devices, err := s.getDevicesBySubsystemID(ctx, sub.ID)
-		if err != nil {
-			return nil, err
-		}
-		sub.Devices = devices
-
-		// Load child subsystems recursively
-		children, err := s.getChildSubsystems(ctx, sub.ID)
-		if err != nil {
-			return nil, err
-		}
-		sub.Subsystems = children
-
-		subsystems = append(subsystems, &sub)
-	}
-
-	return subsystems, rows.Err()
-}
-
-func (s *Storer) getChildSubsystems(ctx context.Context, parentID string) ([]*api.Subsystem, error) {
-	query := `
-		SELECT id, name, description, type, metadata
-		FROM subsystems 
-		WHERE parent_id = $1
-	`
-
-	rows, err := s.db.QueryContext(ctx, query, parentID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query child subsystems: %w", err)
-	}
-	defer rows.Close()
-
-	var subsystems []*api.Subsystem
-	for rows.Next() {
-		var sub api.Subsystem
-		var metadataJSON []byte
-
-		err := rows.Scan(&sub.ID, &sub.Name, &sub.Description, &sub.Type, &metadataJSON)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan child subsystem: %w", err)
-		}
-
-		if len(metadataJSON) > 0 {
-			if err := json.Unmarshal(metadataJSON, &sub.Metadata); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
-			}
-		}
-
-		// Load devices
-		devices, err := s.getDevicesBySubsystemID(ctx, sub.ID)
-		if err != nil {
-			return nil, err
-		}
-		sub.Devices = devices
-
-		// Load child subsystems recursively
-		children, err := s.getChildSubsystems(ctx, sub.ID)
-		if err != nil {
-			return nil, err
-		}
-		sub.Subsystems = children
-
-		subsystems = append(subsystems, &sub)
-	}
-
-	return subsystems, rows.Err()
-}
-
-// UpdateSubsystem updates an existing subsystem
-func (s *Storer) UpdateSubsystem(ctx context.Context, sub *api.Subsystem) error {
-	metadata, err := json.Marshal(sub.Metadata)
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
-	}
-
-	query := `
-		UPDATE subsystems 
-		SET name = $2, description = $3, type = $4, metadata = $5, updated_at = NOW()
-		WHERE id = $1
-	`
-	result, err := s.db.ExecContext(ctx, query, sub.ID, sub.Name, sub.Description, sub.Type, metadata)
-	if err != nil {
-		return fmt.Errorf("failed to update subsystem: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rows == 0 {
-		return fmt.Errorf("subsystem not found: %s", sub.ID)
-	}
-
-	return nil
-}
-
-// DeleteSubsystem deletes a subsystem and all its children (cascading)
-func (s *Storer) DeleteSubsystem(ctx context.Context, id string) error {
-	query := `DELETE FROM subsystems WHERE id = $1`
-	result, err := s.db.ExecContext(ctx, query, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete subsystem: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rows == 0 {
-		return fmt.Errorf("subsystem not found: %s", id)
-	}
-
-	return nil
-}
-
-// ListSubsystems retrieves all subsystems across all systems with their devices and children
-func (s *Storer) ListSubsystems(ctx context.Context) ([]*api.Subsystem, error) {
-	query := `
-		SELECT id, name, description, type, parent_id, metadata
-		FROM subsystems 
-		ORDER BY name
-	`
-
-	rows, err := s.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query subsystems: %w", err)
-	}
-	defer rows.Close()
-
-	var subsystems []*api.Subsystem
-	for rows.Next() {
-		var sub api.Subsystem
-		var parentID sql.NullString
-		var metadataJSON []byte
-
-		err := rows.Scan(&sub.ID, &sub.Name, &sub.Description, &sub.Type, &parentID, &metadataJSON)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan subsystem: %w", err)
-		}
-
-		if len(metadataJSON) > 0 {
-			if err := json.Unmarshal(metadataJSON, &sub.Metadata); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
-			}
-		}
-
-		// Load devices
-		devices, err := s.getDevicesBySubsystemID(ctx, sub.ID)
-		if err != nil {
-			return nil, err
-		}
-		sub.Devices = devices
-
-		// Load child subsystems
-		children, err := s.getChildSubsystems(ctx, sub.ID)
-		if err != nil {
-			return nil, err
-		}
-		sub.Subsystems = children
-
-		subsystems = append(subsystems, &sub)
-	}
-
-	return subsystems, rows.Err()
 }
 
 // Device operations
 
-func (s *Storer) createDevice(ctx context.Context, dev *api.Device, subsystemID string) error {
+func (s *Storer) createDevice(ctx context.Context, dev *api.Device) error {
 	metadata, err := json.Marshal(dev.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
+	// Ensure default tag is present
+	dev.EnsureDefaultTag()
+
 	query := `
-		INSERT INTO devices (id, driver, name, description, subsystem_id, metadata, created_at, updated_at)
+		INSERT INTO devices (id, driver, name, description, metadata, tags, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
 	`
-	_, err = s.db.ExecContext(ctx, query, dev.ID, dev.Driver, dev.Name, dev.Description, subsystemID, metadata)
+	_, err = s.db.ExecContext(ctx, query, dev.ID, dev.Driver, dev.Name, dev.Description, metadata, pq.Array(dev.Tags))
 	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok {
+			if pqErr.Code == "23505" { // unique_violation
+				return fmt.Errorf("%w: device with id %s", ErrAlreadyExists, dev.ID)
+			}
+		}
 		return fmt.Errorf("failed to create device: %w", err)
 	}
 
 	return nil
 }
 
-// CreateDevice creates a new device
-func (s *Storer) CreateDevice(ctx context.Context, dev *api.Device, subsystemID string) error {
-	return s.createDevice(ctx, dev, subsystemID)
+// CreateDevice creates a new device with its nested sensors and actuators in a transaction
+func (s *Storer) CreateDevice(ctx context.Context, dev *api.Device) error {
+	// Start a transaction
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Create the device
+	metadata, err := json.Marshal(dev.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	// Ensure default tag is present
+	dev.EnsureDefaultTag()
+
+	query := `
+		INSERT INTO devices (id, driver, name, description, metadata, tags, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+	`
+	_, err = tx.ExecContext(ctx, query, dev.ID, dev.Driver, dev.Name, dev.Description, metadata, pq.Array(dev.Tags))
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok {
+			if pqErr.Code == "23505" { // unique_violation
+				return fmt.Errorf("%w: device with id %s", ErrAlreadyExists, dev.ID)
+			}
+		}
+		return fmt.Errorf("failed to create device: %w", err)
+	}
+
+	// Insert nested sensors
+	for _, sensor := range dev.Sensors {
+		if baseSensor, ok := sensor.(*api.BaseSensor); ok {
+			// Ensure device_id is set
+			baseSensor.DeviceID = dev.ID
+
+			// Generate default tag if not provided
+			if len(baseSensor.Tags) == 0 {
+				baseSensor.Tags = []string{baseSensor.DefaultTag(dev.ID)}
+			}
+
+			sensorMetadata, err := json.Marshal(baseSensor.Metadata)
+			if err != nil {
+				return fmt.Errorf("failed to marshal sensor metadata: %w", err)
+			}
+
+			sensorQuery := `
+				INSERT INTO sensors (id, device_id, name, sensor_type, metadata, tags, created_at, updated_at)
+				VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+			`
+			_, err = tx.ExecContext(ctx, sensorQuery, baseSensor.ID, baseSensor.DeviceID, baseSensor.Name, baseSensor.SensorType, sensorMetadata, pq.Array(baseSensor.Tags))
+			if err != nil {
+				if pqErr, ok := err.(*pq.Error); ok {
+					if pqErr.Code == "23505" { // unique_violation
+						return fmt.Errorf("%w: sensor %s/%s", ErrAlreadyExists, baseSensor.DeviceID, baseSensor.ID)
+					}
+				}
+				return fmt.Errorf("failed to create sensor: %w", err)
+			}
+		}
+	}
+
+	// Insert nested actuators
+	for _, actuator := range dev.Actuators {
+		if baseActuator, ok := actuator.(*api.BaseActuator); ok {
+			// Ensure device_id is set
+			baseActuator.DeviceID = dev.ID
+
+			// Generate default tag if not provided
+			if len(baseActuator.Tags) == 0 {
+				baseActuator.Tags = []string{baseActuator.DefaultTag(dev.ID)}
+			}
+
+			actuatorMetadata, err := json.Marshal(baseActuator.Metadata)
+			if err != nil {
+				return fmt.Errorf("failed to marshal actuator metadata: %w", err)
+			}
+
+			actuatorQuery := `
+				INSERT INTO actuators (id, device_id, name, actuator_type, metadata, tags, created_at, updated_at)
+				VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+			`
+			_, err = tx.ExecContext(ctx, actuatorQuery, baseActuator.ID, baseActuator.DeviceID, baseActuator.Name, baseActuator.ActuatorType, actuatorMetadata, pq.Array(baseActuator.Tags))
+			if err != nil {
+				if pqErr, ok := err.(*pq.Error); ok {
+					if pqErr.Code == "23505" { // unique_violation
+						return fmt.Errorf("%w: actuator %s/%s", ErrAlreadyExists, baseActuator.DeviceID, baseActuator.ID)
+					}
+				}
+				return fmt.Errorf("failed to create actuator: %w", err)
+			}
+		}
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
 }
 
 // GetDevice retrieves a device by ID
 func (s *Storer) GetDevice(ctx context.Context, id string) (*api.Device, error) {
 	query := `
-		SELECT id, driver, name, description, metadata
+		SELECT id, driver, name, description, metadata, tags
 		FROM devices 
 		WHERE id = $1
 	`
 
 	var dev api.Device
 	var metadataJSON []byte
+	var tags []string
 
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&dev.ID, &dev.Driver, &dev.Name, &dev.Description, &metadataJSON,
+		&dev.ID, &dev.Driver, &dev.Name, &dev.Description, &metadataJSON, pq.Array(&tags),
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("device not found: %s", id)
+			return nil, fmt.Errorf("%w: device %s", ErrNotFound, id)
 		}
 		return nil, fmt.Errorf("failed to get device: %w", err)
 	}
@@ -578,45 +327,12 @@ func (s *Storer) GetDevice(ctx context.Context, id string) (*api.Device, error) 
 		}
 	}
 
+	dev.Tags = tags
+
 	// Note: Sensors and Actuators are not stored in DB as they are interfaces
 	// They would be reconstructed by the application layer
 
 	return &dev, nil
-}
-
-func (s *Storer) getDevicesBySubsystemID(ctx context.Context, subsystemID string) ([]*api.Device, error) {
-	query := `
-		SELECT id, driver, name, description, metadata
-		FROM devices 
-		WHERE subsystem_id = $1
-	`
-
-	rows, err := s.db.QueryContext(ctx, query, subsystemID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query devices: %w", err)
-	}
-	defer rows.Close()
-
-	var devices []*api.Device
-	for rows.Next() {
-		var dev api.Device
-		var metadataJSON []byte
-
-		err := rows.Scan(&dev.ID, &dev.Driver, &dev.Name, &dev.Description, &metadataJSON)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan device: %w", err)
-		}
-
-		if len(metadataJSON) > 0 {
-			if err := json.Unmarshal(metadataJSON, &dev.Metadata); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
-			}
-		}
-
-		devices = append(devices, &dev)
-	}
-
-	return devices, rows.Err()
 }
 
 // UpdateDevice updates an existing device
@@ -626,13 +342,21 @@ func (s *Storer) UpdateDevice(ctx context.Context, dev *api.Device) error {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
+	// Ensure default tag is present
+	dev.EnsureDefaultTag()
+
 	query := `
 		UPDATE devices 
-		SET driver = $2, name = $3, description = $4, metadata = $5, updated_at = NOW()
+		SET driver = $2, name = $3, description = $4, metadata = $5, tags = $6, updated_at = NOW()
 		WHERE id = $1
 	`
-	result, err := s.db.ExecContext(ctx, query, dev.ID, dev.Driver, dev.Name, dev.Description, metadata)
+	result, err := s.db.ExecContext(ctx, query, dev.ID, dev.Driver, dev.Name, dev.Description, metadata, pq.Array(dev.Tags))
 	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok {
+			if pqErr.Code == "23505" { // unique_violation
+				return fmt.Errorf("%w: tag conflict", ErrAlreadyExists)
+			}
+		}
 		return fmt.Errorf("failed to update device: %w", err)
 	}
 
@@ -641,7 +365,7 @@ func (s *Storer) UpdateDevice(ctx context.Context, dev *api.Device) error {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("device not found: %s", dev.ID)
+		return fmt.Errorf("%w: device %s", ErrNotFound, dev.ID)
 	}
 
 	return nil
@@ -660,16 +384,16 @@ func (s *Storer) DeleteDevice(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("device not found: %s", id)
+		return fmt.Errorf("%w: device %s", ErrNotFound, id)
 	}
 
 	return nil
 }
 
-// ListDevices retrieves all devices across all subsystems
+// ListDevices retrieves all devices.
 func (s *Storer) ListDevices(ctx context.Context) ([]*api.Device, error) {
 	query := `
-		SELECT id, driver, name, description, metadata
+		SELECT id, driver, name, description, metadata, tags
 		FROM devices 
 		ORDER BY name
 	`
@@ -684,8 +408,9 @@ func (s *Storer) ListDevices(ctx context.Context) ([]*api.Device, error) {
 	for rows.Next() {
 		var dev api.Device
 		var metadataJSON []byte
+		var tags []string
 
-		err := rows.Scan(&dev.ID, &dev.Driver, &dev.Name, &dev.Description, &metadataJSON)
+		err := rows.Scan(&dev.ID, &dev.Driver, &dev.Name, &dev.Description, &metadataJSON, pq.Array(&tags))
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan device: %w", err)
 		}
@@ -696,325 +421,541 @@ func (s *Storer) ListDevices(ctx context.Context) ([]*api.Device, error) {
 			}
 		}
 
+		dev.Tags = tags
+
 		devices = append(devices, &dev)
 	}
 
 	return devices, rows.Err()
 }
 
-// Sensor Reading operations
-
-// StoreSensorReading stores a sensor reading in the database
-func (s *Storer) StoreSensorReading(ctx context.Context, deviceID, sensorID, sensorName string, sensorType api.SensorType, reading *api.SensorReading) error {
+// GetDeviceByTag retrieves a device with a specific tag
+func (s *Storer) GetDeviceByTag(ctx context.Context, tag string) (*api.Device, error) {
 	query := `
-		INSERT INTO sensor_readings (device_id, sensor_id, sensor_name, sensor_type, value, unit, valid, error, timestamp)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`
-	_, err := s.db.ExecContext(ctx, query,
-		deviceID, sensorID, sensorName, sensorType,
-		reading.Value, reading.Unit, reading.Valid, reading.Error, reading.Timestamp,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to store sensor reading: %w", err)
-	}
-
-	return nil
-}
-
-// GetSensorReadings retrieves sensor readings with optional filters
-func (s *Storer) GetSensorReadings(ctx context.Context, filters SensorReadingFilters) ([]*api.SensorReading, error) {
-	query := `
-		SELECT value, unit, valid, error, timestamp
-		FROM sensor_readings
-		WHERE 1=1
-	`
-	args := []interface{}{}
-	argCount := 1
-
-	if filters.DeviceID != nil {
-		query += fmt.Sprintf(" AND device_id = $%d", argCount)
-		args = append(args, *filters.DeviceID)
-		argCount++
-	}
-
-	if filters.SensorID != nil {
-		query += fmt.Sprintf(" AND sensor_id = $%d", argCount)
-		args = append(args, *filters.SensorID)
-		argCount++
-	}
-
-	if filters.SensorType != nil {
-		query += fmt.Sprintf(" AND sensor_type = $%d", argCount)
-		args = append(args, *filters.SensorType)
-		argCount++
-	}
-
-	if filters.StartTime != nil {
-		query += fmt.Sprintf(" AND timestamp >= $%d", argCount)
-		args = append(args, *filters.StartTime)
-		argCount++
-	}
-
-	if filters.EndTime != nil {
-		query += fmt.Sprintf(" AND timestamp <= $%d", argCount)
-		args = append(args, *filters.EndTime)
-		argCount++
-	}
-
-	query += " ORDER BY timestamp DESC"
-
-	if filters.Limit > 0 {
-		query += fmt.Sprintf(" LIMIT $%d", argCount)
-		args = append(args, filters.Limit)
-	}
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query sensor readings: %w", err)
-	}
-	defer rows.Close()
-
-	var readings []*api.SensorReading
-	for rows.Next() {
-		var reading api.SensorReading
-		var errorMsg sql.NullString
-
-		err := rows.Scan(&reading.Value, &reading.Unit, &reading.Valid, &errorMsg, &reading.Timestamp)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan sensor reading: %w", err)
-		}
-
-		if errorMsg.Valid {
-			reading.Error = errorMsg.String
-		}
-
-		readings = append(readings, &reading)
-	}
-
-	return readings, rows.Err()
-}
-
-// GetLatestSensorReading retrieves the most recent sensor reading for a sensor
-func (s *Storer) GetLatestSensorReading(ctx context.Context, sensorID string) (*api.SensorReading, error) {
-	query := `
-		SELECT value, unit, valid, error, timestamp
-		FROM sensor_readings
-		WHERE sensor_id = $1
-		ORDER BY timestamp DESC
+		SELECT id, driver, name, description, metadata, tags
+		FROM devices 
+		WHERE $1 = ANY(tags)
 		LIMIT 1
 	`
 
-	var reading api.SensorReading
-	var errorMsg sql.NullString
+	var dev api.Device
+	var metadataJSON []byte
+	var tags []string
 
-	err := s.db.QueryRowContext(ctx, query, sensorID).Scan(
-		&reading.Value, &reading.Unit, &reading.Valid, &errorMsg, &reading.Timestamp,
+	err := s.db.QueryRowContext(ctx, query, tag).Scan(
+		&dev.ID, &dev.Driver, &dev.Name, &dev.Description, &metadataJSON, pq.Array(&tags),
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no readings found for sensor: %s", sensorID)
+			return nil, fmt.Errorf("%w: device with tag %s", ErrNotFound, tag)
 		}
-		return nil, fmt.Errorf("failed to get latest sensor reading: %w", err)
+		return nil, fmt.Errorf("failed to get device by tag: %w", err)
 	}
 
-	if errorMsg.Valid {
-		reading.Error = errorMsg.String
+	if len(metadataJSON) > 0 {
+		if err := json.Unmarshal(metadataJSON, &dev.Metadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
 	}
 
-	return &reading, nil
+	dev.Tags = tags
+	return &dev, nil
 }
 
-// DeleteOldSensorReadings deletes sensor readings older than the specified time
-func (s *Storer) DeleteOldSensorReadings(ctx context.Context, before time.Time) (int64, error) {
-	query := `DELETE FROM sensor_readings WHERE timestamp < $1`
-	result, err := s.db.ExecContext(ctx, query, before)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete old sensor readings: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	return rows, nil
-}
-
-// Actuator State operations
-
-// StoreActuatorState stores an actuator state in the database
-func (s *Storer) StoreActuatorState(ctx context.Context, deviceID, actuatorID, actuatorName string, actuatorType api.ActuatorType, state *api.ActuatorState) error {
-	parameters, err := json.Marshal(state.Parameters)
-	if err != nil {
-		return fmt.Errorf("failed to marshal parameters: %w", err)
-	}
-
+// ListDevicesByTagPrefix retrieves devices with tags matching a prefix
+func (s *Storer) ListDevicesByTagPrefix(ctx context.Context, prefix string) ([]*api.Device, error) {
 	query := `
-		INSERT INTO actuator_states (device_id, actuator_id, actuator_name, actuator_type, active, parameters, error, timestamp)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		SELECT DISTINCT id, driver, name, description, metadata, tags
+		FROM devices, unnest(tags) AS tag
+		WHERE tag LIKE $1
+		ORDER BY name
 	`
-	_, err = s.db.ExecContext(ctx, query,
-		deviceID, actuatorID, actuatorName, actuatorType,
-		state.Active, parameters, state.Error, state.Timestamp,
-	)
+
+	rows, err := s.db.QueryContext(ctx, query, prefix+"%")
 	if err != nil {
-		return fmt.Errorf("failed to store actuator state: %w", err)
-	}
-
-	return nil
-}
-
-// GetActuatorStates retrieves actuator states with optional filters
-func (s *Storer) GetActuatorStates(ctx context.Context, filters ActuatorStateFilters) ([]*api.ActuatorState, error) {
-	query := `
-		SELECT active, parameters, error, timestamp
-		FROM actuator_states
-		WHERE 1=1
-	`
-	args := []interface{}{}
-	argCount := 1
-
-	if filters.DeviceID != nil {
-		query += fmt.Sprintf(" AND device_id = $%d", argCount)
-		args = append(args, *filters.DeviceID)
-		argCount++
-	}
-
-	if filters.ActuatorID != nil {
-		query += fmt.Sprintf(" AND actuator_id = $%d", argCount)
-		args = append(args, *filters.ActuatorID)
-		argCount++
-	}
-
-	if filters.ActuatorType != nil {
-		query += fmt.Sprintf(" AND actuator_type = $%d", argCount)
-		args = append(args, *filters.ActuatorType)
-		argCount++
-	}
-
-	if filters.StartTime != nil {
-		query += fmt.Sprintf(" AND timestamp >= $%d", argCount)
-		args = append(args, *filters.StartTime)
-		argCount++
-	}
-
-	if filters.EndTime != nil {
-		query += fmt.Sprintf(" AND timestamp <= $%d", argCount)
-		args = append(args, *filters.EndTime)
-		argCount++
-	}
-
-	query += " ORDER BY timestamp DESC"
-
-	if filters.Limit > 0 {
-		query += fmt.Sprintf(" LIMIT $%d", argCount)
-		args = append(args, filters.Limit)
-	}
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query actuator states: %w", err)
+		return nil, fmt.Errorf("failed to query devices by tag prefix: %w", err)
 	}
 	defer rows.Close()
 
-	var states []*api.ActuatorState
-	for rows.Next() {
-		var state api.ActuatorState
-		var parametersJSON []byte
-		var errorMsg sql.NullString
+	return s.scanDevices(rows)
+}
 
-		err := rows.Scan(&state.Active, &parametersJSON, &errorMsg, &state.Timestamp)
+// scanDevices is a helper to scan device rows
+func (s *Storer) scanDevices(rows *sql.Rows) ([]*api.Device, error) {
+	var devices []*api.Device
+	for rows.Next() {
+		var dev api.Device
+		var metadataJSON []byte
+		var tags []string
+
+		err := rows.Scan(&dev.ID, &dev.Driver, &dev.Name, &dev.Description, &metadataJSON, pq.Array(&tags))
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan actuator state: %w", err)
+			return nil, fmt.Errorf("failed to scan device: %w", err)
 		}
 
-		if len(parametersJSON) > 0 {
-			if err := json.Unmarshal(parametersJSON, &state.Parameters); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal parameters: %w", err)
+		if len(metadataJSON) > 0 {
+			if err := json.Unmarshal(metadataJSON, &dev.Metadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
 			}
 		}
 
-		if errorMsg.Valid {
-			state.Error = errorMsg.String
-		}
-
-		states = append(states, &state)
+		dev.Tags = tags
+		devices = append(devices, &dev)
 	}
 
-	return states, rows.Err()
+	return devices, rows.Err()
 }
 
-// GetLatestActuatorState retrieves the most recent state for an actuator
-func (s *Storer) GetLatestActuatorState(ctx context.Context, actuatorID string) (*api.ActuatorState, error) {
+// Sensor operations
+
+// CreateSensor creates a new sensor
+func (s *Storer) CreateSensor(ctx context.Context, sensor *api.BaseSensor) error {
+	metadata, err := json.Marshal(sensor.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	// Generate default tag if not provided
+	if len(sensor.Tags) == 0 {
+		sensor.Tags = []string{fmt.Sprintf("device.%s.sensor.%s", sensor.DeviceID, sensor.ID)}
+	}
+
 	query := `
-		SELECT active, parameters, error, timestamp
-		FROM actuator_states
-		WHERE actuator_id = $1
-		ORDER BY timestamp DESC
-		LIMIT 1
+		INSERT INTO sensors (id, device_id, name, sensor_type, metadata, tags, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+	`
+	_, err = s.db.ExecContext(ctx, query, sensor.ID, sensor.DeviceID, sensor.Name, sensor.SensorType, metadata, pq.Array(sensor.Tags))
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok {
+			if pqErr.Code == "23505" { // unique_violation
+				return fmt.Errorf("%w: sensor %s/%s", ErrAlreadyExists, sensor.DeviceID, sensor.ID)
+			}
+		}
+		return fmt.Errorf("failed to create sensor: %w", err)
+	}
+
+	return nil
+}
+
+// GetSensor retrieves a sensor by device ID and sensor ID
+func (s *Storer) GetSensor(ctx context.Context, deviceID, sensorID string) (*api.BaseSensor, error) {
+	query := `
+		SELECT id, device_id, name, sensor_type, metadata, tags
+		FROM sensors 
+		WHERE device_id = $1 AND id = $2
 	`
 
-	var state api.ActuatorState
-	var parametersJSON []byte
-	var errorMsg sql.NullString
+	var sensor api.BaseSensor
+	var metadataJSON []byte
+	var tags []string
 
-	err := s.db.QueryRowContext(ctx, query, actuatorID).Scan(
-		&state.Active, &parametersJSON, &errorMsg, &state.Timestamp,
+	err := s.db.QueryRowContext(ctx, query, deviceID, sensorID).Scan(
+		&sensor.ID, &sensor.DeviceID, &sensor.Name, &sensor.SensorType, &metadataJSON, pq.Array(&tags),
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no states found for actuator: %s", actuatorID)
+			return nil, fmt.Errorf("%w: sensor %s/%s", ErrNotFound, deviceID, sensorID)
 		}
-		return nil, fmt.Errorf("failed to get latest actuator state: %w", err)
+		return nil, fmt.Errorf("failed to get sensor: %w", err)
 	}
 
-	if len(parametersJSON) > 0 {
-		if err := json.Unmarshal(parametersJSON, &state.Parameters); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal parameters: %w", err)
+	if len(metadataJSON) > 0 {
+		if err := json.Unmarshal(metadataJSON, &sensor.Metadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
 		}
 	}
 
-	if errorMsg.Valid {
-		state.Error = errorMsg.String
-	}
-
-	return &state, nil
+	sensor.Tags = tags
+	return &sensor, nil
 }
 
-// DeleteOldActuatorStates deletes actuator states older than the specified time
-func (s *Storer) DeleteOldActuatorStates(ctx context.Context, before time.Time) (int64, error) {
-	query := `DELETE FROM actuator_states WHERE timestamp < $1`
-	result, err := s.db.ExecContext(ctx, query, before)
+// UpdateSensor updates an existing sensor
+func (s *Storer) UpdateSensor(ctx context.Context, sensor *api.BaseSensor) error {
+	metadata, err := json.Marshal(sensor.Metadata)
 	if err != nil {
-		return 0, fmt.Errorf("failed to delete old actuator states: %w", err)
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	query := `
+		UPDATE sensors 
+		SET name = $3, sensor_type = $4, metadata = $5, tags = $6, updated_at = NOW()
+		WHERE device_id = $1 AND id = $2
+	`
+	result, err := s.db.ExecContext(ctx, query, sensor.DeviceID, sensor.ID, sensor.Name, sensor.SensorType, metadata, pq.Array(sensor.Tags))
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok {
+			if pqErr.Code == "23505" { // unique_violation
+				return fmt.Errorf("%w: tag conflict", ErrAlreadyExists)
+			}
+		}
+		return fmt.Errorf("failed to update sensor: %w", err)
 	}
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: sensor %s/%s", ErrNotFound, sensor.DeviceID, sensor.ID)
 	}
 
-	return rows, nil
+	return nil
 }
 
-// Filter types
+// DeleteSensor deletes a sensor by device ID and sensor ID
+func (s *Storer) DeleteSensor(ctx context.Context, deviceID, sensorID string) error {
+	query := `DELETE FROM sensors WHERE device_id = $1 AND id = $2`
+	result, err := s.db.ExecContext(ctx, query, deviceID, sensorID)
+	if err != nil {
+		return fmt.Errorf("failed to delete sensor: %w", err)
+	}
 
-// SensorReadingFilters defines optional filters for querying sensor readings
-type SensorReadingFilters struct {
-	DeviceID   *string
-	SensorID   *string
-	SensorType *api.SensorType
-	StartTime  *time.Time
-	EndTime    *time.Time
-	Limit      int
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: sensor %s/%s", ErrNotFound, deviceID, sensorID)
+	}
+
+	return nil
 }
 
-// ActuatorStateFilters defines optional filters for querying actuator states
-type ActuatorStateFilters struct {
-	DeviceID     *string
-	ActuatorID   *string
-	ActuatorType *api.ActuatorType
-	StartTime    *time.Time
-	EndTime      *time.Time
-	Limit        int
+// ListSensors retrieves all sensors
+func (s *Storer) ListSensors(ctx context.Context) ([]*api.BaseSensor, error) {
+	query := `
+		SELECT id, device_id, name, sensor_type, metadata, tags
+		FROM sensors 
+		ORDER BY name
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sensors: %w", err)
+	}
+	defer rows.Close()
+
+	return s.scanSensors(rows)
+}
+
+// ListSensorsByDeviceID retrieves all sensors for a device
+func (s *Storer) ListSensorsByDeviceID(ctx context.Context, deviceID string) ([]*api.BaseSensor, error) {
+	query := `
+		SELECT id, device_id, name, sensor_type, metadata, tags
+		FROM sensors 
+		WHERE device_id = $1
+		ORDER BY name
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sensors by device: %w", err)
+	}
+	defer rows.Close()
+
+	return s.scanSensors(rows)
+}
+
+// GetSensorByTag retrieves a sensor with a specific tag
+func (s *Storer) GetSensorByTag(ctx context.Context, tag string) (*api.BaseSensor, error) {
+	query := `
+		SELECT id, device_id, name, sensor_type, metadata, tags
+		FROM sensors 
+		WHERE $1 = ANY(tags)
+		LIMIT 1
+	`
+
+	var sensor api.BaseSensor
+	var metadataJSON []byte
+	var tags []string
+
+	err := s.db.QueryRowContext(ctx, query, tag).Scan(
+		&sensor.ID, &sensor.DeviceID, &sensor.Name, &sensor.SensorType, &metadataJSON, pq.Array(&tags),
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("%w: sensor with tag %s", ErrNotFound, tag)
+		}
+		return nil, fmt.Errorf("failed to get sensor by tag: %w", err)
+	}
+
+	if len(metadataJSON) > 0 {
+		if err := json.Unmarshal(metadataJSON, &sensor.Metadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
+	}
+
+	sensor.Tags = tags
+	return &sensor, nil
+}
+
+// ListSensorsByTagPrefix retrieves sensors with tags matching a prefix
+func (s *Storer) ListSensorsByTagPrefix(ctx context.Context, prefix string) ([]*api.BaseSensor, error) {
+	query := `
+		SELECT DISTINCT id, device_id, name, sensor_type, metadata, tags
+		FROM sensors, unnest(tags) AS tag
+		WHERE tag LIKE $1
+		ORDER BY name
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, prefix+"%")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sensors by tag prefix: %w", err)
+	}
+	defer rows.Close()
+
+	return s.scanSensors(rows)
+}
+
+// scanSensors is a helper to scan sensor rows
+func (s *Storer) scanSensors(rows *sql.Rows) ([]*api.BaseSensor, error) {
+	var sensors []*api.BaseSensor
+	for rows.Next() {
+		var sensor api.BaseSensor
+		var metadataJSON []byte
+		var tags []string
+
+		err := rows.Scan(&sensor.ID, &sensor.DeviceID, &sensor.Name, &sensor.SensorType, &metadataJSON, pq.Array(&tags))
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan sensor: %w", err)
+		}
+
+		if len(metadataJSON) > 0 {
+			if err := json.Unmarshal(metadataJSON, &sensor.Metadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+			}
+		}
+
+		sensor.Tags = tags
+		sensors = append(sensors, &sensor)
+	}
+
+	return sensors, rows.Err()
+}
+
+// Actuator operations
+
+// CreateActuator creates a new actuator
+func (s *Storer) CreateActuator(ctx context.Context, actuator *api.BaseActuator) error {
+	metadata, err := json.Marshal(actuator.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	// Generate default tag if not provided
+	if len(actuator.Tags) == 0 {
+		actuator.Tags = []string{fmt.Sprintf("device.%s.actuator.%s", actuator.DeviceID, actuator.ID)}
+	}
+
+	query := `
+		INSERT INTO actuators (id, device_id, name, actuator_type, metadata, tags, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+	`
+	_, err = s.db.ExecContext(ctx, query, actuator.ID, actuator.DeviceID, actuator.Name, actuator.ActuatorType, metadata, pq.Array(actuator.Tags))
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok {
+			if pqErr.Code == "23505" { // unique_violation
+				return fmt.Errorf("%w: actuator %s/%s", ErrAlreadyExists, actuator.DeviceID, actuator.ID)
+			}
+		}
+		return fmt.Errorf("failed to create actuator: %w", err)
+	}
+
+	return nil
+}
+
+// GetActuator retrieves an actuator by device ID and actuator ID
+func (s *Storer) GetActuator(ctx context.Context, deviceID, actuatorID string) (*api.BaseActuator, error) {
+	query := `
+		SELECT id, device_id, name, actuator_type, metadata, tags
+		FROM actuators 
+		WHERE device_id = $1 AND id = $2
+	`
+
+	var actuator api.BaseActuator
+	var metadataJSON []byte
+	var tags []string
+
+	err := s.db.QueryRowContext(ctx, query, deviceID, actuatorID).Scan(
+		&actuator.ID, &actuator.DeviceID, &actuator.Name, &actuator.ActuatorType, &metadataJSON, pq.Array(&tags),
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("%w: actuator %s/%s", ErrNotFound, deviceID, actuatorID)
+		}
+		return nil, fmt.Errorf("failed to get actuator: %w", err)
+	}
+
+	if len(metadataJSON) > 0 {
+		if err := json.Unmarshal(metadataJSON, &actuator.Metadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
+	}
+
+	actuator.Tags = tags
+	return &actuator, nil
+}
+
+// UpdateActuator updates an existing actuator
+func (s *Storer) UpdateActuator(ctx context.Context, actuator *api.BaseActuator) error {
+	metadata, err := json.Marshal(actuator.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	query := `
+		UPDATE actuators 
+		SET name = $3, actuator_type = $4, metadata = $5, tags = $6, updated_at = NOW()
+		WHERE device_id = $1 AND id = $2
+	`
+	result, err := s.db.ExecContext(ctx, query, actuator.DeviceID, actuator.ID, actuator.Name, actuator.ActuatorType, metadata, pq.Array(actuator.Tags))
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok {
+			if pqErr.Code == "23505" { // unique_violation
+				return fmt.Errorf("%w: tag conflict", ErrAlreadyExists)
+			}
+		}
+		return fmt.Errorf("failed to update actuator: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: actuator %s/%s", ErrNotFound, actuator.DeviceID, actuator.ID)
+	}
+
+	return nil
+}
+
+// DeleteActuator deletes an actuator by device ID and actuator ID
+func (s *Storer) DeleteActuator(ctx context.Context, deviceID, actuatorID string) error {
+	query := `DELETE FROM actuators WHERE device_id = $1 AND id = $2`
+	result, err := s.db.ExecContext(ctx, query, deviceID, actuatorID)
+	if err != nil {
+		return fmt.Errorf("failed to delete actuator: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: actuator %s/%s", ErrNotFound, deviceID, actuatorID)
+	}
+
+	return nil
+}
+
+// ListActuators retrieves all actuators
+func (s *Storer) ListActuators(ctx context.Context) ([]*api.BaseActuator, error) {
+	query := `
+		SELECT id, device_id, name, actuator_type, metadata, tags
+		FROM actuators 
+		ORDER BY name
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query actuators: %w", err)
+	}
+	defer rows.Close()
+
+	return s.scanActuators(rows)
+}
+
+// ListActuatorsByDeviceID retrieves all actuators for a device
+func (s *Storer) ListActuatorsByDeviceID(ctx context.Context, deviceID string) ([]*api.BaseActuator, error) {
+	query := `
+		SELECT id, device_id, name, actuator_type, metadata, tags
+		FROM actuators 
+		WHERE device_id = $1
+		ORDER BY name
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query actuators by device: %w", err)
+	}
+	defer rows.Close()
+
+	return s.scanActuators(rows)
+}
+
+// GetActuatorByTag retrieves an actuator with a specific tag
+func (s *Storer) GetActuatorByTag(ctx context.Context, tag string) (*api.BaseActuator, error) {
+	query := `
+		SELECT id, device_id, name, actuator_type, metadata, tags
+		FROM actuators 
+		WHERE $1 = ANY(tags)
+		LIMIT 1
+	`
+
+	var actuator api.BaseActuator
+	var metadataJSON []byte
+	var tags []string
+
+	err := s.db.QueryRowContext(ctx, query, tag).Scan(
+		&actuator.ID, &actuator.DeviceID, &actuator.Name, &actuator.ActuatorType, &metadataJSON, pq.Array(&tags),
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("%w: actuator with tag %s", ErrNotFound, tag)
+		}
+		return nil, fmt.Errorf("failed to get actuator by tag: %w", err)
+	}
+
+	if len(metadataJSON) > 0 {
+		if err := json.Unmarshal(metadataJSON, &actuator.Metadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
+	}
+
+	actuator.Tags = tags
+	return &actuator, nil
+}
+
+// ListActuatorsByTagPrefix retrieves actuators with tags matching a prefix
+func (s *Storer) ListActuatorsByTagPrefix(ctx context.Context, prefix string) ([]*api.BaseActuator, error) {
+	query := `
+		SELECT DISTINCT id, device_id, name, actuator_type, metadata, tags
+		FROM actuators, unnest(tags) AS tag
+		WHERE tag LIKE $1
+		ORDER BY name
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, prefix+"%")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query actuators by tag prefix: %w", err)
+	}
+	defer rows.Close()
+
+	return s.scanActuators(rows)
+}
+
+// scanActuators is a helper to scan actuator rows
+func (s *Storer) scanActuators(rows *sql.Rows) ([]*api.BaseActuator, error) {
+	var actuators []*api.BaseActuator
+	for rows.Next() {
+		var actuator api.BaseActuator
+		var metadataJSON []byte
+		var tags []string
+
+		err := rows.Scan(&actuator.ID, &actuator.DeviceID, &actuator.Name, &actuator.ActuatorType, &metadataJSON, pq.Array(&tags))
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan actuator: %w", err)
+		}
+
+		if len(metadataJSON) > 0 {
+			if err := json.Unmarshal(metadataJSON, &actuator.Metadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+			}
+		}
+
+		actuator.Tags = tags
+		actuators = append(actuators, &actuator)
+	}
+
+	return actuators, rows.Err()
 }
