@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -17,7 +19,6 @@ import (
 	temporalWorker "go.temporal.io/sdk/worker"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -153,10 +154,9 @@ func createTLSConfig(opts MQTTOptions) (*tls.Config, error) {
 }
 
 func runWorker(cmd *cobra.Command, args []string) {
-	// Setup zerolog
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	ctx := cmd.Context()
+	ctx = log.Logger.WithContext(ctx)
+	var wg sync.WaitGroup
 
 	// Get values from Viper (which handles env vars automatically)
 	dbConnString = viper.GetString("db")
@@ -201,7 +201,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 	}
 
 	// Create Temporal client
-	c, err := client.Dial(client.Options{
+	c, err := client.DialContext(ctx, client.Options{
 		HostPort:  temporalOptions.Host,
 		Namespace: temporalOptions.Namespace,
 		Identity:  temporalOptions.Identity,
@@ -244,7 +244,11 @@ func runWorker(cmd *cobra.Command, args []string) {
 		log.Fatal().Err(err).Msg("Unable to connect to MQTT broker")
 	}
 	shellyDriver := shelly.New(mqttClient)
-	workflowCtx := workflows.New(store, shellyDriver)
+	if err := shellyDriver.Start(ctx); err != nil {
+		log.Fatal().Err(err).Msg("Unable to start Shelly driver")
+	}
+
+	workflowCtx := workflows.New(log.Logger, store, shellyDriver)
 
 	// Create worker
 	w := temporalWorker.New(c, temporalOptions.TaskQueue, temporalWorker.Options{
@@ -267,11 +271,14 @@ func runWorker(cmd *cobra.Command, args []string) {
 		Msg("Connected to services")
 
 	// // Start worker in a goroutine
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		err := w.Run(temporalWorker.InterruptCh())
 		if err != nil {
 			log.Fatal().Err(err).Msg("Unable to start worker")
 		}
+		log.Info().Msg("Temporal worker stopped")
 	}()
 
 	// Wait for interrupt signal to gracefully shutdown the worker
@@ -279,7 +286,17 @@ func runWorker(cmd *cobra.Command, args []string) {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	log.Info().Msg("Shutting down MQTT client...")
+
 	log.Info().Msg("Shutting down Temporal worker...")
-	// w.Stop()
-	log.Info().Msg("Temporal worker stopped")
+	w.Stop()
+	if err := shellyDriver.Stop(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("Error stopping Shelly driver")
+	}
+	mqttClient.Disconnect(250)
+	wg.Wait()
+
 }

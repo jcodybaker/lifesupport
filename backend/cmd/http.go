@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,6 +11,7 @@ import (
 	"lifesupport/backend/pkg/httpapi"
 	"lifesupport/backend/pkg/storer"
 
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -40,14 +40,14 @@ func runHTTPServer(cmd *cobra.Command, args []string) {
 
 	store, err := storer.New(connStr)
 	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		log.Fatal().Err(err).Msg("Failed to connect to database")
 	}
 	defer store.Close()
 
 	// Initialize database schema
 	ctx := context.Background()
 	if err := store.InitSchema(ctx); err != nil {
-		log.Fatal("Failed to initialize schema:", err)
+		log.Fatal().Err(err).Msg("Failed to initialize schema")
 	}
 
 	// Create API handler and setup router
@@ -69,9 +69,9 @@ func runHTTPServer(cmd *cobra.Command, args []string) {
 
 	// Setup graceful shutdown
 	go func() {
-		log.Printf("Life Support HTTP API server starting on port %s", httpPort)
+		log.Info().Str("port", httpPort).Msg("Life Support HTTP API server starting")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("HTTP server error: %v", err)
+			log.Fatal().Err(err).Msg("HTTP server error")
 		}
 	}()
 
@@ -80,13 +80,13 @@ func runHTTPServer(cmd *cobra.Command, args []string) {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down HTTP server...")
+	log.Info().Msg("Shutting down HTTP server...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Fatal("HTTP server forced to shutdown:", err)
+		log.Fatal().Err(err).Msg("HTTP server forced to shutdown")
 	}
 
-	log.Println("HTTP server stopped")
+	log.Info().Msg("HTTP server stopped")
 }

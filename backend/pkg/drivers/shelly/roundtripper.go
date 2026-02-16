@@ -34,7 +34,7 @@ func (r *Driver) buildSrc() string {
 }
 
 func (r *Driver) buildTopic() string {
-	return r.baseName + "/rpc"
+	return r.buildSrc() + "/rpc"
 }
 
 func (r *Driver) handleMessage(_ mqtt.Client, m mqtt.Message) {
@@ -56,6 +56,10 @@ func (r *Driver) handleMessage(_ mqtt.Client, m mqtt.Message) {
 
 func (r *Driver) roundTrip(ctx context.Context, dst string, method string, params any, reply any, timeout time.Duration) error {
 	id := atomic.AddUint64(&r.nextID, 1)
+
+	if params == nil {
+		params = json.RawMessage("{}")
+	}
 
 	// Build and publish the request message here, including the ID and parameters.
 	req := RequestFrame{
@@ -81,7 +85,7 @@ func (r *Driver) roundTrip(ctx context.Context, dst string, method string, param
 	r.router[id] = respCh
 	r.lock.Unlock()
 
-	dstTopic := "shelly/" + dst + "/rpc"
+	dstTopic := dst + "/rpc"
 
 	if timeout > 0 {
 		var cancel context.CancelFunc

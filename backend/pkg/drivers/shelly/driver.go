@@ -53,13 +53,17 @@ type Driver struct {
 	baseName   string
 	router     map[uint64]chan []byte
 	lock       sync.Mutex
+	log        zerolog.Logger
 }
 
 func (r *Driver) Start(ctx context.Context) error {
 	if r.clientName == "" {
 		return errors.New("client name cannot be empty")
 	}
-	t := r.mqttClient.Subscribe(r.buildTopic(), 1, r.handleMessage)
+	ll := r.logCtx(ctx, "mqtt")
+	topic := r.buildTopic()
+	ll.Info().Str("topic", topic).Msg("Starting Shelly Driver: Subscribing to MQTT topic")
+	t := r.mqttClient.Subscribe(topic, 1, r.handleMessage)
 	select {
 	case <-t.Done():
 		return t.Error()
@@ -69,7 +73,10 @@ func (r *Driver) Start(ctx context.Context) error {
 }
 
 func (r *Driver) Stop(ctx context.Context) error {
-	t := r.mqttClient.Unsubscribe(r.buildSrc())
+	topic := r.buildTopic()
+	ll := r.logCtx(ctx, "mqtt")
+	ll.Info().Str("topic", topic).Msg("Stopping Shelly Driver: Unsubscribing from MQTT topic")
+	t := r.mqttClient.Unsubscribe(topic)
 	select {
 	case <-t.Done():
 		return t.Error()
@@ -79,7 +86,13 @@ func (r *Driver) Stop(ctx context.Context) error {
 }
 
 func (d *Driver) logCtx(ctx context.Context, sub string) zerolog.Logger {
-	ll := log.Ctx(ctx).With().Str("component", "shelly")
+	var ll zerolog.Context
+	if ctxLog := log.Ctx(ctx); ctxLog.GetLevel() != zerolog.Disabled {
+		ll = ctxLog.With()
+	} else {
+		ll = d.log.With()
+	}
+	ll = ll.Str("component", "shelly")
 	if sub != "" {
 		ll = ll.Str("subcomponent", sub)
 	}

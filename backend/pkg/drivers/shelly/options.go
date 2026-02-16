@@ -1,6 +1,10 @@
 package shelly
 
-import "time"
+import (
+	"time"
+
+	"github.com/rs/zerolog"
+)
 
 type Option func(*Driver)
 
@@ -31,5 +35,11 @@ func WithDiscoveryTimeout(timeout time.Duration) Option {
 func WithDiscoveryWorkers(workers int) Option {
 	return func(d *Driver) {
 		d.discoveryWorkers = workers
+	}
+}
+
+func WithLogger(logger zerolog.Logger) Option {
+	return func(d *Driver) {
+		d.log = logger
 	}
 }
