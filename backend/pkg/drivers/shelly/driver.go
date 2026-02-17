@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	clickhouse "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -20,11 +21,12 @@ const (
 	defaultDiscoveryWorkers    = 5
 )
 
-func New(mqttClient mqtt.Client, opts ...Option) *Driver {
+func New(mqttClient mqtt.Client, clickhouseConn clickhouse.Conn, opts ...Option) *Driver {
 	hostname, _ := os.Hostname()
 	nextID := rand.Uint64()
 	rt := &Driver{
 		mqttClient:          mqttClient,
+		clickhouseConn:      clickhouseConn,
 		nextID:              nextID,
 		clientName:          hostname,
 		baseName:            defaultBaseName,
@@ -40,7 +42,8 @@ func New(mqttClient mqtt.Client, opts ...Option) *Driver {
 }
 
 type Driver struct {
-	mqttClient mqtt.Client
+	mqttClient     mqtt.Client
+	clickhouseConn clickhouse.Conn
 
 	// discovery
 	discoveryBufferSize int

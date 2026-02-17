@@ -20,6 +20,11 @@ var (
 	ErrAlreadyExists = errors.New("already exists")
 )
 
+// execer is an interface that both *sql.DB and *sql.Tx implement
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+}
+
 // Storer provides database operations for device data
 type Storer struct {
 	db  *sql.DB
@@ -259,28 +264,8 @@ func (s *Storer) CreateDevice(ctx context.Context, dev *api.Device) error {
 		// Ensure device_id is set
 		sensor.DeviceID = dev.ID
 
-		// Generate default tag if not provided
-		if len(sensor.Tags) == 0 {
-			sensor.Tags = []string{sensor.DefaultTag(dev.ID)}
-		}
-
-		sensorMetadata, err := json.Marshal(sensor.Metadata)
-		if err != nil {
-			return fmt.Errorf("failed to marshal sensor metadata: %w", err)
-		}
-
-		sensorQuery := `
-				INSERT INTO sensors (id, device_id, name, sensor_type, metadata, tags, created_at, updated_at)
-				VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-			`
-		_, err = tx.ExecContext(ctx, sensorQuery, sensor.ID, sensor.DeviceID, sensor.Name, sensor.SensorType, sensorMetadata, pq.Array(sensor.Tags))
-		if err != nil {
-			if pqErr, ok := err.(*pq.Error); ok {
-				if pqErr.Code == "23505" { // unique_violation
-					return fmt.Errorf("%w: sensor %s/%s", ErrAlreadyExists, sensor.DeviceID, sensor.ID)
-				}
-			}
-			return fmt.Errorf("failed to create sensor: %w", err)
+		if err := s.createSensor(ctx, tx, sensor); err != nil {
+			return err
 		}
 	}
 
@@ -289,28 +274,8 @@ func (s *Storer) CreateDevice(ctx context.Context, dev *api.Device) error {
 		// Ensure device_id is set
 		actuator.DeviceID = dev.ID
 
-		// Generate default tag if not provided
-		if len(actuator.Tags) == 0 {
-			actuator.Tags = []string{actuator.DefaultTag(dev.ID)}
-		}
-
-		actuatorMetadata, err := json.Marshal(actuator.Metadata)
-		if err != nil {
-			return fmt.Errorf("failed to marshal actuator metadata: %w", err)
-		}
-
-		actuatorQuery := `
-				INSERT INTO actuators (id, device_id, name, actuator_type, metadata, tags, created_at, updated_at)
-				VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-			`
-		_, err = tx.ExecContext(ctx, actuatorQuery, actuator.ID, actuator.DeviceID, actuator.Name, actuator.ActuatorType, actuatorMetadata, pq.Array(actuator.Tags))
-		if err != nil {
-			if pqErr, ok := err.(*pq.Error); ok {
-				if pqErr.Code == "23505" { // unique_violation
-					return fmt.Errorf("%w: actuator %s/%s", ErrAlreadyExists, actuator.DeviceID, actuator.ID)
-				}
-			}
-			return fmt.Errorf("failed to create actuator: %w", err)
+		if err := s.createActuator(ctx, tx, actuator); err != nil {
+			return err
 		}
 	}
 
@@ -618,10 +583,8 @@ func (s *Storer) scanDevices(rows *sql.Rows) ([]*api.Device, error) {
 
 // Sensor operations
 
-// CreateSensor creates a new sensor
-func (s *Storer) CreateSensor(ctx context.Context, sensor *api.Sensor) error {
-	ll := s.logCtx(ctx, "sensor")
-	ll.Debug().Str("device_id", sensor.DeviceID).Str("sensor_id", sensor.ID).Str("sensor_type", string(sensor.SensorType)).Msg("creating sensor")
+// createSensor is a private helper that inserts a sensor using the provided execer (db or tx)
+func (s *Storer) createSensor(ctx context.Context, exec execer, sensor *api.Sensor) error {
 	metadata, err := json.Marshal(sensor.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -629,14 +592,14 @@ func (s *Storer) CreateSensor(ctx context.Context, sensor *api.Sensor) error {
 
 	// Generate default tag if not provided
 	if len(sensor.Tags) == 0 {
-		sensor.Tags = []string{fmt.Sprintf("device.%s.sensor.%s", sensor.DeviceID, sensor.ID)}
+		sensor.Tags = []string{sensor.DefaultTag(sensor.DeviceID)}
 	}
 
 	query := `
 		INSERT INTO sensors (id, device_id, name, sensor_type, metadata, tags, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
 	`
-	_, err = s.db.ExecContext(ctx, query, sensor.ID, sensor.DeviceID, sensor.Name, sensor.SensorType, metadata, pq.Array(sensor.Tags))
+	_, err = exec.ExecContext(ctx, query, sensor.ID, sensor.DeviceID, sensor.Name, sensor.SensorType, metadata, pq.Array(sensor.Tags))
 	if err != nil {
 		if pqErr, ok := err.(*pq.Error); ok {
 			if pqErr.Code == "23505" { // unique_violation
@@ -647,6 +610,13 @@ func (s *Storer) CreateSensor(ctx context.Context, sensor *api.Sensor) error {
 	}
 
 	return nil
+}
+
+// CreateSensor creates a new sensor
+func (s *Storer) CreateSensor(ctx context.Context, sensor *api.Sensor) error {
+	ll := s.logCtx(ctx, "sensor")
+	ll.Debug().Str("device_id", sensor.DeviceID).Str("sensor_id", sensor.ID).Str("sensor_type", string(sensor.SensorType)).Msg("creating sensor")
+	return s.createSensor(ctx, s.db, sensor)
 }
 
 // GetSensor retrieves a sensor by device ID and sensor ID
@@ -861,10 +831,8 @@ func (s *Storer) scanSensors(rows *sql.Rows) ([]*api.Sensor, error) {
 
 // Actuator operations
 
-// CreateActuator creates a new actuator
-func (s *Storer) CreateActuator(ctx context.Context, actuator *api.Actuator) error {
-	ll := s.logCtx(ctx, "actuator")
-	ll.Debug().Str("device_id", actuator.DeviceID).Str("actuator_id", actuator.ID).Str("actuator_type", string(actuator.ActuatorType)).Msg("creating actuator")
+// createActuator is a private helper that inserts an actuator using the provided execer (db or tx)
+func (s *Storer) createActuator(ctx context.Context, exec execer, actuator *api.Actuator) error {
 	metadata, err := json.Marshal(actuator.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -872,14 +840,14 @@ func (s *Storer) CreateActuator(ctx context.Context, actuator *api.Actuator) err
 
 	// Generate default tag if not provided
 	if len(actuator.Tags) == 0 {
-		actuator.Tags = []string{fmt.Sprintf("device.%s.actuator.%s", actuator.DeviceID, actuator.ID)}
+		actuator.Tags = []string{actuator.DefaultTag(actuator.DeviceID)}
 	}
 
 	query := `
 		INSERT INTO actuators (id, device_id, name, actuator_type, metadata, tags, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
 	`
-	_, err = s.db.ExecContext(ctx, query, actuator.ID, actuator.DeviceID, actuator.Name, actuator.ActuatorType, metadata, pq.Array(actuator.Tags))
+	_, err = exec.ExecContext(ctx, query, actuator.ID, actuator.DeviceID, actuator.Name, actuator.ActuatorType, metadata, pq.Array(actuator.Tags))
 	if err != nil {
 		if pqErr, ok := err.(*pq.Error); ok {
 			if pqErr.Code == "23505" { // unique_violation
@@ -890,6 +858,13 @@ func (s *Storer) CreateActuator(ctx context.Context, actuator *api.Actuator) err
 	}
 
 	return nil
+}
+
+// CreateActuator creates a new actuator
+func (s *Storer) CreateActuator(ctx context.Context, actuator *api.Actuator) error {
+	ll := s.logCtx(ctx, "actuator")
+	ll.Debug().Str("device_id", actuator.DeviceID).Str("actuator_id", actuator.ID).Str("actuator_type", string(actuator.ActuatorType)).Msg("creating actuator")
+	return s.createActuator(ctx, s.db, actuator)
 }
 
 // GetActuator retrieves an actuator by device ID and actuator ID

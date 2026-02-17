@@ -9,8 +9,6 @@ const (
 	ActuatorTypeRelay           ActuatorType = "relay"
 	ActuatorTypePeristalticPump ActuatorType = "peristaltic_pump"
 	ActuatorTypeDimmableLight   ActuatorType = "dimmable_light"
-	ActuatorTypeServo           ActuatorType = "servo"
-	ActuatorTypeValve           ActuatorType = "valve"
 )
 
 // ActuatorState represents the current state of an actuator
@@ -39,6 +37,10 @@ type Actuator struct {
 
 func (a *Actuator) GetID() string {
 	return a.ID
+}
+
+func (a *Actuator) GetDeviceID() string {
+	return a.DeviceID
 }
 
 func (a *Actuator) GetName() string {

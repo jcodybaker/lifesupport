@@ -169,6 +169,13 @@ func runWorker(cmd *cobra.Command, args []string) {
 	}
 	defer c.Close()
 
+	// Initialize ClickHouse client
+	clickhouseConn, err := InitClickHouse(ctx, commonOptions.ClickHouse)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Unable to create ClickHouse client")
+	}
+	defer clickhouseConn.Close()
+
 	// Configure MQTT client
 	mqttClientOptions := mqtt.NewClientOptions().
 		AddBroker(mqttOptions.Broker).
@@ -200,7 +207,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 	if err := token.Error(); err != nil {
 		log.Fatal().Err(err).Msg("Unable to connect to MQTT broker")
 	}
-	shellyDriver := shelly.New(mqttClient)
+	shellyDriver := shelly.New(mqttClient, clickhouseConn)
 	if err := shellyDriver.Start(ctx); err != nil {
 		log.Fatal().Err(err).Msg("Unable to start Shelly driver")
 	}

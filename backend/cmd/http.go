@@ -24,8 +24,8 @@ var httpCmd = &cobra.Command{
 }
 
 var (
-	httpPort      string
-	httpOptions   CommonOptions
+	httpPort    string
+	httpOptions CommonOptions
 )
 
 func init() {
@@ -56,6 +56,14 @@ func runHTTPServer(cmd *cobra.Command, args []string) {
 	}
 	defer store.Close()
 	log.Info().Str("db", httpOptions.DB).Msg("Connected to database")
+
+	// Initialize ClickHouse client
+	clickhouseConn, err := InitClickHouse(ctx, httpOptions.ClickHouse)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to connect to ClickHouse")
+	} else {
+		defer clickhouseConn.Close()
+	}
 
 	// Create Temporal client (optional - server will still work without it)
 	temporalClient, err := InitTemporalClient(ctx, httpOptions.Temporal)

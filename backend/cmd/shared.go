@@ -2,12 +2,16 @@ package cmd
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
 	"os"
 	"time"
 
 	"lifesupport/backend/pkg/storer"
 	"lifesupport/backend/pkg/temporallog"
 
+	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -16,8 +20,9 @@ import (
 
 // CommonOptions holds configuration shared between commands
 type CommonOptions struct {
-	DB       string
-	Temporal TemporalOptions
+	DB         string
+	Temporal   TemporalOptions
+	ClickHouse ClickHouseOptions
 }
 
 // TemporalOptions holds Temporal configuration
@@ -27,6 +32,19 @@ type TemporalOptions struct {
 	TaskQueue         string
 	Identity          string
 	ConnectionTimeout time.Duration
+}
+
+// ClickHouseOptions holds ClickHouse configuration
+type ClickHouseOptions struct {
+	Addrs           []string
+	Database        string
+	Username        string
+	Password        string
+	DialTimeout     time.Duration
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	TLS             bool
 }
 
 // AddCommonFlags adds shared database and temporal flags to a command
@@ -44,6 +62,26 @@ func AddCommonFlags(cmd *cobra.Command, opts *CommonOptions) {
 	viper.BindPFlag("temporal-namespace", cmd.Flags().Lookup("temporal-namespace"))
 	viper.BindPFlag("temporal-identity", cmd.Flags().Lookup("temporal-identity"))
 	viper.BindPFlag("temporal-timeout", cmd.Flags().Lookup("temporal-timeout"))
+
+	// ClickHouse flags
+	cmd.Flags().StringSliceVar(&opts.ClickHouse.Addrs, "clickhouse-addrs", []string{"localhost:9000"}, "ClickHouse server addresses")
+	cmd.Flags().StringVar(&opts.ClickHouse.Database, "clickhouse-database", "default", "ClickHouse database name")
+	cmd.Flags().StringVar(&opts.ClickHouse.Username, "clickhouse-username", "default", "ClickHouse username")
+	cmd.Flags().StringVar(&opts.ClickHouse.Password, "clickhouse-password", "", "ClickHouse password")
+	cmd.Flags().DurationVar(&opts.ClickHouse.DialTimeout, "clickhouse-dial-timeout", 10*time.Second, "ClickHouse dial timeout")
+	cmd.Flags().IntVar(&opts.ClickHouse.MaxOpenConns, "clickhouse-max-open-conns", 10, "ClickHouse max open connections")
+	cmd.Flags().IntVar(&opts.ClickHouse.MaxIdleConns, "clickhouse-max-idle-conns", 5, "ClickHouse max idle connections")
+	cmd.Flags().DurationVar(&opts.ClickHouse.ConnMaxLifetime, "clickhouse-conn-max-lifetime", time.Hour, "ClickHouse connection max lifetime")
+	cmd.Flags().BoolVar(&opts.ClickHouse.TLS, "clickhouse-tls", false, "Enable TLS for ClickHouse connection")
+	viper.BindPFlag("clickhouse-addrs", cmd.Flags().Lookup("clickhouse-addrs"))
+	viper.BindPFlag("clickhouse-database", cmd.Flags().Lookup("clickhouse-database"))
+	viper.BindPFlag("clickhouse-username", cmd.Flags().Lookup("clickhouse-username"))
+	viper.BindPFlag("clickhouse-password", cmd.Flags().Lookup("clickhouse-password"))
+	viper.BindPFlag("clickhouse-dial-timeout", cmd.Flags().Lookup("clickhouse-dial-timeout"))
+	viper.BindPFlag("clickhouse-max-open-conns", cmd.Flags().Lookup("clickhouse-max-open-conns"))
+	viper.BindPFlag("clickhouse-max-idle-conns", cmd.Flags().Lookup("clickhouse-max-idle-conns"))
+	viper.BindPFlag("clickhouse-conn-max-lifetime", cmd.Flags().Lookup("clickhouse-conn-max-lifetime"))
+	viper.BindPFlag("clickhouse-tls", cmd.Flags().Lookup("clickhouse-tls"))
 }
 
 // LoadCommonOptions loads options from viper (which handles env vars and flags)
@@ -63,6 +101,17 @@ func LoadCommonOptions(opts *CommonOptions) {
 			opts.Temporal.Identity = hostname
 		}
 	}
+
+	// Load ClickHouse options
+	opts.ClickHouse.Addrs = viper.GetStringSlice("clickhouse-addrs")
+	opts.ClickHouse.Database = viper.GetString("clickhouse-database")
+	opts.ClickHouse.Username = viper.GetString("clickhouse-username")
+	opts.ClickHouse.Password = viper.GetString("clickhouse-password")
+	opts.ClickHouse.DialTimeout = viper.GetDuration("clickhouse-dial-timeout")
+	opts.ClickHouse.MaxOpenConns = viper.GetInt("clickhouse-max-open-conns")
+	opts.ClickHouse.MaxIdleConns = viper.GetInt("clickhouse-max-idle-conns")
+	opts.ClickHouse.ConnMaxLifetime = viper.GetDuration("clickhouse-conn-max-lifetime")
+	opts.ClickHouse.TLS = viper.GetBool("clickhouse-tls")
 }
 
 // InitDatabase creates and initializes the database connection
@@ -99,4 +148,43 @@ func InitTemporalClient(ctx context.Context, opts TemporalOptions) (client.Clien
 		Msg("Connected to Temporal")
 
 	return c, nil
+}
+
+// InitClickHouse creates a ClickHouse client with the given options
+func InitClickHouse(ctx context.Context, opts ClickHouseOptions) (driver.Conn, error) {
+	connOptions := &clickhouse.Options{
+		Addr: opts.Addrs,
+		Auth: clickhouse.Auth{
+			Database: opts.Database,
+			Username: opts.Username,
+			Password: opts.Password,
+		},
+		DialTimeout:     opts.DialTimeout,
+		MaxOpenConns:    opts.MaxOpenConns,
+		MaxIdleConns:    opts.MaxIdleConns,
+		ConnMaxLifetime: opts.ConnMaxLifetime,
+	}
+
+	if opts.TLS {
+		connOptions.TLS = &tls.Config{
+			InsecureSkipVerify: false,
+		}
+	}
+
+	conn, err := clickhouse.Open(connOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open ClickHouse connection: %w", err)
+	}
+
+	if err := conn.Ping(ctx); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to ping ClickHouse: %w", err)
+	}
+
+	log.Info().
+		Strs("addrs", opts.Addrs).
+		Str("database", opts.Database).
+		Msg("Connected to ClickHouse")
+
+	return conn, nil
 }
