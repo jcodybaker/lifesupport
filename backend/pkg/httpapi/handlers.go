@@ -3,11 +3,13 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 	"go.temporal.io/sdk/client"
 
 	"lifesupport/backend/pkg/api"
+	"lifesupport/backend/pkg/drivers"
 	"lifesupport/backend/pkg/storer"
 )
 
@@ -15,13 +17,15 @@ import (
 type Handler struct {
 	Store          *storer.Storer
 	TemporalClient client.Client
+	Drivers        *drivers.Manager
 }
 
 // NewHandler creates a new Handler instance
-func NewHandler(store *storer.Storer, temporalClient client.Client) *Handler {
+func NewHandler(store *storer.Storer, temporalClient client.Client, drivers *drivers.Manager) *Handler {
 	return &Handler{
 		Store:          store,
 		TemporalClient: temporalClient,
+		Drivers:        drivers,
 	}
 }
 
@@ -331,4 +335,50 @@ func (h *Handler) GetActuatorByTag(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(actuator)
+}
+
+func (h *Handler) GetActuatorLatestStatusByTag(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	tag := params["tag"]
+
+	ctx := r.Context()
+	actuator, err := h.Store.GetActuatorByTag(ctx, tag)
+	if err != nil {
+		http.Error(w, "Actuator not found: "+err.Error(), http.StatusNotFound)
+		return
+	}
+
+	device, err := h.Store.GetDevice(ctx, actuator.GetDeviceID())
+	if err != nil {
+		http.Error(w, "Device not found: "+err.Error(), http.StatusNotFound)
+		return
+	}
+
+	driver, exists := h.Drivers.Get(device.Driver)
+	if !exists {
+		http.Error(w, "Driver not found: "+string(device.Driver), http.StatusNotFound)
+		return
+	}
+
+	opt := api.StatusOptions{
+		NewerThan: nil, // Could be extended to accept a query parameter for filtering by time
+	}
+
+	if newerThanStr := r.URL.Query().Get("newer_than"); newerThanStr != "" {
+		newerThan, err := time.Parse(time.RFC3339, newerThanStr)
+		if err != nil {
+			http.Error(w, "Invalid newer_than parameter: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		opt.NewerThan = &newerThan
+	}
+
+	status, err := driver.GetLastStatus(ctx, opt, actuator)
+	if err != nil {
+		http.Error(w, "Failed to get actuator status: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
 }

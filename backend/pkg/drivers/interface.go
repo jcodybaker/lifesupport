@@ -18,3 +18,4 @@ type Driver interface {
 	DiscoverDevices(ctx context.Context, opt api.DiscoveryOptions, s *storer.Storer) (*api.DiscoveryResult, error)
 	GetLastStatus(ctx context.Context, opt api.StatusOptions, resource Statuser) (*api.SensorReading, error)
 }
+

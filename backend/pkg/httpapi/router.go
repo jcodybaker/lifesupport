@@ -29,6 +29,7 @@ func (h *Handler) SetupRouter() *mux.Router {
 	r.HandleFunc("/api/actuators", h.CreateActuator).Methods("POST")
 	r.HandleFunc("/api/actuators", h.ListActuators).Methods("GET")
 	r.HandleFunc("/api/actuators/by-tag/{tag}", h.GetActuatorByTag).Methods("GET")
+	r.HandleFunc("/api/actuators/by-tag/{tag}/status", h.GetActuatorLatestStatusByTag).Methods("GET")
 	r.HandleFunc("/api/actuators/{device_id}/{actuator_id}", h.GetActuator).Methods("GET")
 	r.HandleFunc("/api/actuators/{device_id}/{actuator_id}", h.UpdateActuator).Methods("PUT")
 	r.HandleFunc("/api/actuators/{device_id}/{actuator_id}", h.DeleteActuator).Methods("DELETE")

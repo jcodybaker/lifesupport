@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"lifesupport/backend/pkg/drivers"
+	"lifesupport/backend/pkg/drivers/shelly"
 	"lifesupport/backend/pkg/httpapi"
 
 	"github.com/rs/zerolog/log"
@@ -75,8 +77,11 @@ func runHTTPServer(cmd *cobra.Command, args []string) {
 		defer temporalClient.Close()
 	}
 
+	driversManager := drivers.NewManager()
+	driversManager.Register("shelly", shelly.New(nil, clickhouseConn))
+
 	// Create API handler and setup router
-	handler := httpapi.NewHandler(store, temporalClient)
+	handler := httpapi.NewHandler(store, temporalClient, driversManager)
 	router := handler.SetupRouter()
 
 	server := &http.Server{
