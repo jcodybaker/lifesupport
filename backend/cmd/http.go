@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var httpCmd = &cobra.Command{
@@ -26,30 +24,24 @@ var httpCmd = &cobra.Command{
 }
 
 var (
-	httpPort    string
 	httpOptions CommonOptions
+	httpPort    string
 )
 
 func init() {
-	rootCmd.AddCommand(httpCmd)
-
-	// Configure Viper for automatic environment variable binding
-	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-
 	// HTTP-specific flags
 	httpCmd.Flags().StringVarP(&httpPort, "port", "p", "8080", "Port to run the HTTP server on")
-	viper.BindPFlag("port", httpCmd.Flags().Lookup("port"))
 
 	// Add common database and temporal flags
 	AddCommonFlags(httpCmd, &httpOptions)
+	rootCmd.AddCommand(httpCmd)
 }
 
 func runHTTPServer(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
-	// Load configuration from flags and environment variables
-	LoadCommonOptions(&httpOptions)
-	httpPort = viper.GetString("port")
+	// Initialize options
+	InitCommonOptions(&httpOptions)
 
 	// Initialize database
 	store, err := InitDatabase(ctx, httpOptions.DB)

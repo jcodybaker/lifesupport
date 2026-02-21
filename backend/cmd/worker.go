@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,7 +18,6 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var workerCmd = &cobra.Command{
@@ -58,15 +56,11 @@ type WorkerOptions struct {
 func init() {
 	rootCmd.AddCommand(workerCmd)
 
-	// Configure Viper for automatic environment variable binding
-	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-
 	// Add common database and temporal flags
 	AddCommonFlags(workerCmd, &commonOptions)
 
 	// Worker-specific temporal flags
 	workerCmd.Flags().StringVar(&commonOptions.Temporal.TaskQueue, "task-queue", "lifesupport-tasks", "Task queue name")
-	viper.BindPFlag("task-queue", workerCmd.Flags().Lookup("task-queue"))
 
 	// MQTT flags
 	workerCmd.Flags().StringVar(&mqttOptions.Broker, "mqtt-broker", "tcp://localhost:1883", "MQTT broker URL")
@@ -81,24 +75,10 @@ func init() {
 	workerCmd.Flags().StringVar(&mqttOptions.TLSClientCert, "mqtt-tls-client-cert", "", "MQTT TLS client certificate file path")
 	workerCmd.Flags().StringVar(&mqttOptions.TLSClientKey, "mqtt-tls-client-key", "", "MQTT TLS client key file path")
 	workerCmd.Flags().BoolVar(&mqttOptions.TLSInsecureSkipVerify, "mqtt-tls-insecure-skip-verify", false, "MQTT TLS skip certificate verification")
-	viper.BindPFlag("mqtt-broker", workerCmd.Flags().Lookup("mqtt-broker"))
-	viper.BindPFlag("mqtt-client-id", workerCmd.Flags().Lookup("mqtt-client-id"))
-	viper.BindPFlag("mqtt-username", workerCmd.Flags().Lookup("mqtt-username"))
-	viper.BindPFlag("mqtt-password", workerCmd.Flags().Lookup("mqtt-password"))
-	viper.BindPFlag("mqtt-keepalive", workerCmd.Flags().Lookup("mqtt-keepalive"))
-	viper.BindPFlag("mqtt-clean-session", workerCmd.Flags().Lookup("mqtt-clean-session"))
-	viper.BindPFlag("mqtt-auto-reconnect", workerCmd.Flags().Lookup("mqtt-auto-reconnect"))
-	viper.BindPFlag("mqtt-connect-timeout", workerCmd.Flags().Lookup("mqtt-connect-timeout"))
-	viper.BindPFlag("mqtt-tls-ca-cert", workerCmd.Flags().Lookup("mqtt-tls-ca-cert"))
-	viper.BindPFlag("mqtt-tls-client-cert", workerCmd.Flags().Lookup("mqtt-tls-client-cert"))
-	viper.BindPFlag("mqtt-tls-client-key", workerCmd.Flags().Lookup("mqtt-tls-client-key"))
-	viper.BindPFlag("mqtt-tls-insecure-skip-verify", workerCmd.Flags().Lookup("mqtt-tls-insecure-skip-verify"))
 
 	// Worker flags
 	workerCmd.Flags().IntVar(&workerOptions.MaxConcurrentActivityExecutionSize, "max-concurrent-activities", 10, "Maximum concurrent activity executions")
 	workerCmd.Flags().IntVar(&workerOptions.MaxConcurrentWorkflowTaskExecutionSize, "max-concurrent-workflows", 10, "Maximum concurrent workflow task executions")
-	viper.BindPFlag("max-concurrent-activities", workerCmd.Flags().Lookup("max-concurrent-activities"))
-	viper.BindPFlag("max-concurrent-workflows", workerCmd.Flags().Lookup("max-concurrent-workflows"))
 }
 
 func createTLSConfig(opts MQTTOptions) (*tls.Config, error) {
@@ -136,23 +116,8 @@ func runWorker(cmd *cobra.Command, args []string) {
 	ctx = log.Logger.WithContext(ctx)
 	var wg sync.WaitGroup
 
-	// Load configuration from flags and environment variables
-	LoadCommonOptions(&commonOptions)
-	commonOptions.Temporal.TaskQueue = viper.GetString("task-queue")
-	mqttOptions.Broker = viper.GetString("mqtt-broker")
-	mqttOptions.ClientID = viper.GetString("mqtt-client-id")
-	mqttOptions.Username = viper.GetString("mqtt-username")
-	mqttOptions.Password = viper.GetString("mqtt-password")
-	mqttOptions.KeepAlive = viper.GetDuration("mqtt-keepalive")
-	mqttOptions.CleanSession = viper.GetBool("mqtt-clean-session")
-	mqttOptions.AutoReconnect = viper.GetBool("mqtt-auto-reconnect")
-	mqttOptions.ConnectTimeout = viper.GetDuration("mqtt-connect-timeout")
-	mqttOptions.TLSCACert = viper.GetString("mqtt-tls-ca-cert")
-	mqttOptions.TLSClientCert = viper.GetString("mqtt-tls-client-cert")
-	mqttOptions.TLSClientKey = viper.GetString("mqtt-tls-client-key")
-	mqttOptions.TLSInsecureSkipVerify = viper.GetBool("mqtt-tls-insecure-skip-verify")
-	workerOptions.MaxConcurrentActivityExecutionSize = viper.GetInt("max-concurrent-activities")
-	workerOptions.MaxConcurrentWorkflowTaskExecutionSize = viper.GetInt("max-concurrent-workflows")
+	// Initialize options
+	InitCommonOptions(&commonOptions)
 
 	// Initialize database
 	store, err := InitDatabase(ctx, commonOptions.DB)
