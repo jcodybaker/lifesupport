@@ -189,6 +189,18 @@ export const actuatorAPI = {
     }
   },
 
+  async getStatusByTag(tag) {
+    try {
+      return await request(`/actuators/by-tag/${encodeURIComponent(tag)}/status`);
+    } catch (err) {
+      // Return null if no status exists (404)
+      if (err.message?.includes('404')) {
+        return null;
+      }
+      throw err;
+    }
+  },
+
   async createState(state) {
     return request('/actuator-states', {
       method: 'POST',

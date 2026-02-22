@@ -61,14 +61,21 @@
       const result = await actuatorAPI.list();
       actuators = Array.isArray(result) ? result : [];
       
-      // TODO: Enable when backend implements /actuator-states/{id}/latest endpoint
-      // const statePromises = actuators.map(async (actuator) => {
-      //   const state = await actuatorAPI.getLatest(actuator.id);
-      //   if (state) {
-      //     actuatorStates[actuator.id] = state;
-      //   }
-      // });
-      // await Promise.all(statePromises);
+      // Load status for each actuator using the new by-tag endpoint
+      const statusPromises = actuators.map(async (actuator) => {
+        // Use the first tag (typically the default tag) to fetch status
+        if (actuator.tags && actuator.tags.length > 0) {
+          try {
+            const status = await actuatorAPI.getStatusByTag(actuator.tags[0]);
+            if (status) {
+              actuatorStates[actuator.device_id+"/"+actuator.id] = status;
+            }
+          } catch (err) {
+            console.warn(`Failed to load status for actuator ${actuator.device_id+"/"+actuator.id}:`, err);
+          }
+        }
+      });
+      await Promise.all(statusPromises);
     } catch (err) {
       console.error('Error loading actuators:', err);
       actuators = [];
@@ -491,15 +498,15 @@
               {#if actuator.device_id}
                 <div class="device-ref">Device: {actuator.device_id}</div>
               {/if}
-              {#if actuatorStates[actuator.id]}
+              {#if actuatorStates[actuator.device_id+"/"+actuator.id]}
                 <div class="state-display">
-                  <span class="state-indicator" class:active={actuatorStates[actuator.id].active}>
-                    {actuatorStates[actuator.id].active ? '🟢 Active' : '⚪ Inactive'}
+                  <span class="state-indicator" class:active={actuatorStates[actuator.device_id+"/"+actuator.id].active}>
+                    {actuatorStates[actuator.device_id+"/"+actuator.id].value ? '🟢 Active' : '⚪ Inactive'}
                   </span>
-                  <span class="state-time">{formatTimestamp(actuatorStates[actuator.id].timestamp)}</span>
-                  {#if actuatorStates[actuator.id].parameters && Object.keys(actuatorStates[actuator.id].parameters).length > 0}
+                  <span class="state-time">{formatTimestamp(actuatorStates[actuator.device_id+"/"+actuator.id].timestamp)}</span>
+                  {#if actuatorStates[actuator.device_id+"/"+actuator.id].parameters && Object.keys(actuatorStates[actuator.device_id+"/"+actuator.id].parameters).length > 0}
                     <div class="state-params">
-                      {#each Object.entries(actuatorStates[actuator.id].parameters) as [key, value]}
+                      {#each Object.entries(actuatorStates[actuator.device_id+"/"+actuator.id].parameters) as [key, value]}
                         <span class="param">{key}: {value}</span>
                       {/each}
                     </div>
